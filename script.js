@@ -18,10 +18,9 @@ const SUFFIXES = [
     'roq', 'mtir', 'gina', 'dir', 'mi', 'chi', 'oq'
 ];
 
-// STANDARTLASHTIRILGAN USTUN NOMLARI (AI va Data adashmasligi uchun)
 const posCategories = {
     ot: ["Ma'noviy guruhlari", "Tuzilishi", "Yasalishi", "Kelishik", "Egalik", "Son"],
-    sifat: ["Belgining xususiyati", "Daraja", "Tuzilishi", "Yasalishi"],
+    sifat: ["Belgining xususiyati", "Daraja", "Tuzulishi", "Yasalishi", "Sifatning LMGlari"],
     son: ["Ma'noviy xususiyatlari", "Hisob so'zlar", "Tuzilishiga ko'ra"],
     olmosh: ["Ma'noviy guruhlari", "Tuzilishi", "Yasalishi", "Kelishik", "Son", "Egalik", "Vazifasi"],
     fel: ["Leksik-ma'noviy guruhlari", "Tuzilishi", "Yasalishi", "Bo'lishli/Bo'lishsiz", "Nisbat", "Mayl", "Zamon", "Shaxs-son"],
@@ -53,7 +52,7 @@ function getPosTypeFromXpos(xpos, fallbackType) {
 }
 
 /* =========================================
-   2. DATA YUKLASH (EXCEL -> JS MEMORY)
+   2. DATA YUKLASH
    ========================================= */
 async function loadData() {
     const files = [
@@ -87,13 +86,11 @@ async function loadData() {
                     if (form !== 'form' && form !== '—') {
                         let cleanRow = {};
                         currentHeaders.forEach((header, i) => {
-                            // Kalitlarni standartlash
                             let key = header;
                             if(key.includes("Sifatning")) key = "Ma'noviy guruhlari";
-                            if(key.includes("Olmoshlarning ma’noviy")) key = "Ma'noviy guruhlari";
-                            if(key.includes("Ravishlarning ma’noviy")) key = "Ma'noviy guruhlari";
+                            if(key.includes("Olmoshlarning")) key = "Ma'noviy guruhlari";
+                            if(key.includes("Ravishlarning")) key = "Ma'noviy guruhlari";
                             if(key.includes("Tuzulishi")) key = "Tuzilishi";
-                            
                             cleanRow[key] = (row[i] !== undefined && row[i] !== null && String(row[i]).trim() !== '') ? String(row[i]).trim() : '—';
                         });
 
@@ -111,62 +108,21 @@ async function loadData() {
 }
 
 /* =========================================
-   3. ICHKI MANTIQ (KENGAYTIRILGAN LUG'AT)
-   ========================================= */
-function ruleBasedAI(word) {
-    let wClean = word.toLowerCase().replace(/[.,!?;:"()«»]/g, '');
-    let pos = 'ot', xpos = 'N', extras = {};
-
-    const commonAdjectives = /^(yangi|eski|qari|yosh|sariq|qizil|oq|qora|yashil|ko'k|katta|kichik|yaxshi|yomon|uzun|qisqa|chiroyli|xunuk|shirin|issiq|sovuq)$/;
-    // Ravishlar (allaqachon, yana shu yerda!)
-    const commonAdverbs = /^(allaqachon|yana|bugun|erta|kecha|hali|hozir|doim|ko'p|oz|juda|sal|ancha|faqat|hatto|darhol|tez|sekin|asta|aslo|mutlaqo)$/;
-    const commonPronouns = /^(men|sen|u|biz|siz|ular|shu|bu|o'sha|ushbu|kim|nima|qanday|qachon|qayer|hamma|barcha|har|hech|harna|o'z)$/;
-
-    if (wClean.match(commonPronouns)) { pos = 'olmosh'; xpos = 'P'; }
-    else if (wClean.match(commonAdverbs) || wClean.endsWith('larcha') || wClean.endsWith('ona')) { pos = 'ravish'; xpos = 'Adv'; }
-    else if (wClean.match(/(di|gan|yap|moqda|yotir|moq|ib|sa|gin|sin|ay)$/)) { pos = 'fel'; xpos = 'VB'; }
-    else if (wClean.match(commonAdjectives) || wClean.endsWith('roq') || wClean.endsWith('mtir') || wClean.endsWith('dor') || wClean.endsWith('chan') || wClean.endsWith('li') || wClean.endsWith('siz') || wClean.endsWith('gi')) { pos = 'sifat'; xpos = 'JJ'; }
-    else if (wClean.match(/(ta|nchi|inchi)$/) || wClean.match(/\d/)) { pos = 'son'; xpos = 'Num'; }
-
-    // Standart qatorlarni avtomatik to'ldirish (Bo'sh qolmasligi uchun)
-    if (pos === 'sifat') {
-        extras["Belgining xususiyati"] = "Asliy (Tahminiy)";
-        extras["Daraja"] = wClean.endsWith('roq') ? "Qiyosiy" : "Oddiy";
-        extras["Tuzilishi"] = "Sodda";
-        extras["Yasalishi"] = "Tub";
-    } else if (pos === 'ravish') {
-        extras["Ma'noviy guruhlari"] = wClean.match(/^(bugun|erta|kecha|hozir|allaqachon|hali)$/) ? "Payt ravishi" : "Holat ravishi";
-        extras["Tuzilishi"] = "Sodda";
-        extras["Yasalishi"] = "Tub";
-        extras["Darajasi"] = "Oddiy";
-    }
-
-    return { FORM: word, LEMMA: wClean, FEATS: '∅', XPOS: xpos, posType: pos, source: 'Ichki Lug\'at (Fallback)', extras: extras };
-}
-
-/* =========================================
-   4. GROQ AI ULANISHI (ANIQ YO'RIQNOMA BILAN)
+   3. GROQ AI ULANISHI
    ========================================= */
 async function callRealAI(word, fullSentence) {
-    if (!AI_API_KEY || AI_API_KEY.length < 10) return ruleBasedAI(word);
+    if (!AI_API_KEY || AI_API_KEY.length < 10) return { FORM: word, LEMMA: word.toLowerCase(), FEATS: '∅', XPOS: 'N', posType: 'ot', source: 'Ichki Zaxira', extras: {} };
 
     const prompt = `Siz o'zbek tilining professional NLP morfologik tahlilchisisiz.
 Quyidagi "${word}" so'zini "${fullSentence}" gapi kontekstida tahlil qiling.
 
-DIQQAT: "allaqachon", "yana", "juda", "ko'p" kabi so'zlar qat'iyan RAVISH (Adv), "yangi", "sariq", "katta" kabi so'zlar qat'iyan SIFAT (JJ) hisoblanadi!
-
-Javobingiz qat'iyan bitta JSON obyekti bo'lsin.
+Javobingiz qat'iyan bitta JSON obyekti bo'lsin:
 {
   "LEMMA": "o'zak so'z",
   "FEATS": "+qo'shimchalar",
   "XPOS": "N, JJ, Num, P, VB, Adv dan biri",
   "posType": "ot, sifat, son, olmosh, fel, ravish dan biri",
-  "extras": {
-     // Turkumga mos qatorlarni to'ldiring.
-     // Sifat uchun: "Belgining xususiyati", "Daraja", "Tuzilishi", "Yasalishi"
-     // Ravish uchun: "Ma'noviy guruhlari", "Tuzilishi", "Yasalishi", "Darajasi"
-     // Ot uchun: "Ma'noviy guruhlari", "Tuzilishi", "Yasalishi", "Kelishik", "Egalik", "Son"
-  }
+  "extras": {}
 }`;
 
     try {
@@ -182,7 +138,6 @@ Javobingiz qat'iyan bitta JSON obyekti bo'lsin.
         });
 
         if (!response.ok) throw new Error("API Xatoligi");
-
         const data = await response.json();
         const aiResult = JSON.parse(data.choices[0].message.content);
 
@@ -195,10 +150,60 @@ Javobingiz qat'iyan bitta JSON obyekti bo'lsin.
             source: 'Groq AI',
             extras: aiResult.extras || {}
         };
-
     } catch (error) {
-        return ruleBasedAI(word);
+        return { FORM: word, LEMMA: word.toLowerCase(), FEATS: '∅', XPOS: 'N', posType: 'ot', source: 'Ichki Zaxira', extras: {} };
     }
+}
+
+/* =========================================
+   4. MORFOLOGIK NAZORATCHI (XATOLARNI MAJBURAN TUZATADI)
+   ========================================= */
+function applyMorphologicalRules(analysis, wClean) {
+    const adjectives = /^(yangi|eski|qari|yosh|sariq|qizil|oq|qora|yashil|ko'k|katta|kichik|yaxshi|yomon|uzun|qisqa|shirin|issiq|sovuq)$/;
+    const adverbs = /^(allaqachon|yana|endi|bugun|erta|kecha|hali|hozir|doim|ko'p|oz|juda|sal|ancha|faqat|hatto|darhol|tez|sekin|aslo|mutlaqo)$/;
+    const pronouns = /^(men|sen|u|biz|siz|ular|shu|bu|o'sha|ushbu|kim|nima|qanday|qachon|qayer|hamma|barcha|har|hech|harna|o'z)$/;
+
+    analysis.extras = analysis.extras || {};
+
+    // Asosiy turkumlarni qat'iy belgilash
+    if (wClean.match(adverbs)) { analysis.posType = 'ravish'; analysis.XPOS = 'Adv'; }
+    else if (wClean.match(pronouns)) { analysis.posType = 'olmosh'; analysis.XPOS = 'P'; }
+    else if (wClean.match(adjectives) || wClean.match(/(li|siz|gi|ki|dor|chan|mtir|roq)$/)) { 
+        analysis.posType = 'sifat'; 
+        analysis.XPOS = 'JJ'; 
+    }
+
+    // YASALISHI VA XUSUSIYATLARNI TUZATISH
+    if (analysis.posType === 'sifat') {
+        if (!analysis.extras["Tuzilishi"] || analysis.extras["Tuzilishi"] === '—') analysis.extras["Tuzilishi"] = "Sodda";
+        
+        // "Chiroyli", "aqlli", "suvsiz" kabilarni ushlash (YASAMA SIFATLAR)
+        if (wClean.match(/(li|siz|gi|ki|dor|chan)$/)) {
+            analysis.extras["Yasalishi"] = "Yasama";
+            analysis.extras["Belgining xususiyati"] = "Nisbiy";
+            if (!analysis.extras["Daraja"] || analysis.extras["Daraja"] === '—') analysis.extras["Daraja"] = "Oddiy";
+        } 
+        // "Sariqroq", "qizg'ish", "ko'kimtir" kabilarni ushlash
+        else if (wClean.match(/(roq|mtir|ish)$/)) {
+            analysis.extras["Yasalishi"] = "Tub";
+            analysis.extras["Belgining xususiyati"] = "Asliy";
+            analysis.extras["Daraja"] = wClean.endsWith('roq') ? "Qiyosiy" : "Ozaytirma";
+        }
+        // "Yangi", "Sariq" kabi sof sifatlar (TUB SIFATLAR)
+        else {
+            if (!analysis.extras["Yasalishi"] || analysis.extras["Yasalishi"] === '—') analysis.extras["Yasalishi"] = "Tub";
+            if (!analysis.extras["Belgining xususiyati"] || analysis.extras["Belgining xususiyati"] === '—') analysis.extras["Belgining xususiyati"] = "Asliy";
+            if (!analysis.extras["Daraja"] || analysis.extras["Daraja"] === '—') analysis.extras["Daraja"] = "Oddiy";
+        }
+    }
+
+    if (analysis.posType === 'ravish') {
+        if (!analysis.extras["Tuzilishi"] || analysis.extras["Tuzilishi"] === '—') analysis.extras["Tuzilishi"] = "Sodda";
+        if (!analysis.extras["Yasalishi"] || analysis.extras["Yasalishi"] === '—') analysis.extras["Yasalishi"] = "Tub";
+        if (!analysis.extras["Darajasi"] || analysis.extras["Darajasi"] === '—') analysis.extras["Darajasi"] = "Oddiy";
+    }
+
+    return analysis;
 }
 
 /* =========================================
@@ -245,7 +250,7 @@ if (analyzeBtn) {
                             analysis.FORM = cleanW; 
                             let oldFeats = analysis.FEATS === '∅' || analysis.FEATS === '—' ? '' : analysis.FEATS;
                             analysis.FEATS = (oldFeats + " +" + s).trim();
-                            analysis.source = 'Data (Miya - Stemming)';
+                            analysis.source = 'Data (Stemming)';
                             isStemFound = true;
                             break;
                         }
@@ -258,6 +263,9 @@ if (analyzeBtn) {
                 }
             }
             
+            // ENG MUHIM QADAM: MORFOLOGIK NAZORATCHIDAN O'TKAZISH!
+            analysis = applyMorphologicalRules(analysis, cleanW);
+
             // HTML Kartochka chizish
             const card = document.createElement('div');
             card.className = 'word-card';
@@ -274,25 +282,24 @@ if (analyzeBtn) {
             const turkum = analysis.posType || 'ot';
             const categories = posCategories[turkum] || posCategories['ot'];
             
-            // MUKAMMAL MATCHING (Kataklarni aniq to'ldirish)
             categories.forEach(cat => {
                 let val = "—";
+                const safeCat = cat.toLowerCase().replace(/[\s’'_-]/g, '');
+
+                // Oldin "extras" dan qidiramiz (Chunki Nazoratchi shu yerga yozadi)
                 if (analysis.extras) {
-                    // Katta-kichik harflar, bo'shliqlar va apostroflarni olib tashlab solishtiramiz
-                    const safeCat = cat.toLowerCase().replace(/[\s’'_-]/g, '');
-                    const matchedKey = Object.keys(analysis.extras).find(k => {
-                        const safeKey = k.toLowerCase().replace(/[\s’'_-]/g, '');
-                        return safeKey.includes(safeCat) || safeCat.includes(safeKey);
-                    });
-                    
+                    const matchedKey = Object.keys(analysis.extras).find(k => k.toLowerCase().replace(/[\s’'_-]/g, '') === safeCat);
                     if (matchedKey && analysis.extras[matchedKey] && analysis.extras[matchedKey] !== "—") {
                         val = analysis.extras[matchedKey];
                     }
                 }
                 
-                // Agar baribir bo'sh qolsa va ichki qoidada topilgan bo'lsa (Kafolat)
-                if (val === "—" && analysis[cat] && analysis[cat] !== "—") {
-                    val = analysis[cat];
+                // Agar topilmasa, to'g'ridan to'g'ri analizdan olamiz (Excel data)
+                if (val === "—") {
+                    const matchedRootKey = Object.keys(analysis).find(k => k.toLowerCase().replace(/[\s’'_-]/g, '') === safeCat);
+                    if (matchedRootKey && analysis[matchedRootKey] && analysis[matchedRootKey] !== "—") {
+                        val = analysis[matchedRootKey];
+                    }
                 }
 
                 tableRows += `<tr><th>${cat}</th><td>${val}</td></tr>`;
@@ -324,7 +331,6 @@ if (analyzeBtn) {
     });
 }
 
-// XLSX Export Funksiyasi
 const exportBtn = document.getElementById('exportBtn') || document.getElementById('exportXlsxBtn');
 if(exportBtn) {
     exportBtn.addEventListener('click', () => {
@@ -339,7 +345,7 @@ if(exportBtn) {
         });
         const ws = XLSX.utils.json_to_sheet(rows);
         XLSX.utils.book_append_sheet(wb, ws, "NLP_Tahlil");
-        XLSX.writeFile(wb, "Tahlil_Natijalari_Yakuniy.xlsx");
+        XLSX.writeFile(wb, "Yakuniy_Tahlil_Natijalari.xlsx");
         showToast("Excel fayli saqlandi!", "success");
     });
 }
