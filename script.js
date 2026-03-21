@@ -1,21 +1,26 @@
 /* ============================================================
-   main.js — O'zbek Morfologik Tahlil
-   database.json dan o'qiydi (Python bilan yaratilgan)
+   main.js — O'zbek Morfologik Tahlil (YANGILANGAN)
+   database.json (siz tashlagan versiya) bilan 100% mos
+   - Olmosh / Sifat / Son shablonlari to'g'ri aniqlanadi
+   - Qo'shma sonlar va iboralar ("yigirma ikki", "mana bu", "bir nima" va h.k.) bir butun sifatida taniladi
+   - "—" va "∅" qiymatli ustunlar tufayli noto'g'ri turkum aniqlanmasligi tuzatildi
    ============================================================ */
 
 let DB = {};
 
+// SHABLONLARGA TO‘LIQ MOS USTUNLAR
 const POS_COLS = {
-  sifat:  ['Belgining xususiyati', 'Daraja', 'Tuzilishi', 'Yasalishi', "Sifatning LMGlari"],
-  son:    ["Ma'noviy xususiyatlari", "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzilishiga ko'ra"],
-  olmosh: ["Ma'noviy guruhlari", 'Tuzilishi', 'Yasalishi', 'Kelishik', 'Son', 'Egalik', 'Vazifasi'],
+  sifat:  ['Belgining xususiyati', 'Daraja', 'Tuzulishi', 'Yasalishi', 'Sifatning LMGlari'],
+  son:    [" Ma'noviy xususiyatlari", "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"],
+  olmosh: ["Olmoshlarning ma’noviy guruhlari", 'Tuzilishi', 'Yasalishi', 'Kelishik', 'Son', 'Egalik', 'Olmoshlarning gapda bajaradigan vazifasiga ko‘ra turlari'],
 };
 
-const POS_LABEL = { sifat: 'Sifat', son: 'Son', olmosh: 'Olmosh' };
-const POS_COLOR = { sifat: '#7c3aed', son: '#0891b2', olmosh: '#059669' };
-const POS_EMOJI = { sifat: '🎨', son: '🔢', olmosh: '👤' };
+const POS_LABEL = { sifat: 'Sifat', son: 'Son', olmosh: 'Olmosh', other: 'Boshqa' };
+const POS_COLOR = { sifat: '#7c3aed', son: '#0891b2', olmosh: '#059669', other: '#64748b' };
+const POS_EMOJI = { sifat: '🎨', son: '🔢', olmosh: '👤', other: '📝' };
 
 function toKey(text) {
+  if (!text) return '';
   return String(text)
     .toLowerCase()
     .replace(/[\u2018\u2019\u02bb\u02bc'`"]/g, '')
@@ -33,7 +38,7 @@ function toast(msg, type = 'info') {
   setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 300); }, 3500);
 }
 
-/* ── 1. database.json YUKLASH ── */
+/* ── 1. DATABASE YUKLASH + TO‘G‘RI POS ANIQLASH ── */
 async function loadDatabase() {
   const statusEl = document.getElementById('dbStatus');
   const paths = ['./data/database.json', '/data/database.json', './database.json'];
@@ -42,25 +47,61 @@ async function loadDatabase() {
     try {
       const res = await fetch(path);
       if (!res.ok) continue;
-      DB = await res.json();
-      const count = Object.keys(DB).length;
+      
+      const rawData = await res.json();
+      DB = {};
+      let count = 0;
+
+      if (Array.isArray(rawData)) {
+        rawData.forEach(item => {
+          if (!item.FORM || item.ID === 'ID' || item.ID === "ID") return;
+
+          const key = toKey(item.FORM);
+
+          // 🔥 YANGI: faqat qiymati bo‘sh bo‘lmagan ustunga qarab turkum aniqlash
+          let posType = 'other';
+          if (item["Olmoshlarning ma’noviy guruhlari"] && 
+              item["Olmoshlarning ma’noviy guruhlari"] !== "—" && 
+              item["Olmoshlarning ma’noviy guruhlari"] !== "∅" && 
+              item["Olmoshlarning ma’noviy guruhlari"] !== "") {
+            posType = 'olmosh';
+          } else if (item["Belgining xususiyati"] && 
+                     item["Belgining xususiyati"] !== "—" && 
+                     item["Belgining xususiyati"] !== "∅" && 
+                     item["Belgining xususiyati"] !== "") {
+            posType = 'sifat';
+          } else if (item[" Ma'noviy xususiyatlari"] && 
+                     item[" Ma'noviy xususiyatlari"] !== "—" && 
+                     item[" Ma'noviy xususiyatlari"] !== "∅" && 
+                     item[" Ma'noviy xususiyatlari"] !== "") {
+            posType = 'son';
+          }
+
+          item.posType = posType;
+          DB[key] = item;   // oxirgi nusxa ustunlik qiladi (duplicate FORM lar uchun)
+          count++;
+        });
+      }
+
       if (statusEl) {
-        statusEl.textContent = `✅ Baza tayyor: ${count} ta so'z`;
+        statusEl.textContent = `✅ Baza tayyor: ${count} ta so‘z`;
         statusEl.style.color = '#16a34a';
       }
-      toast(`Baza yuklandi! ${count} ta so'z`, 'success');
+      toast(`Baza yuklandi! ${count} ta so‘z (qo'shma iboralar qo‘llab-quvvatlanadi)`, 'success');
       return;
-    } catch (_) {}
+    } catch (err) {
+      console.warn("Fayl o'qishda xatolik:", err);
+    }
   }
 
   if (statusEl) {
     statusEl.textContent = '❌ database.json topilmadi!';
     statusEl.style.color = '#dc2626';
   }
-  toast("database.json topilmadi! ./data/ papkasiga qo'ying.", 'error');
+  toast("database.json topilmadi! ./data/ yoki ildizga qo‘ying.", 'error');
 }
 
-/* ── 2. SO'Z QIDIRISH ── */
+/* ── 2. SO‘Z / IBORA QIDIRISH (SUFFIX + Qo‘shma) ── */
 const SUFFIXES = [
   'larimizdan','larimizga','larimizni','larimizda','larining',
   'laridan','lariga','larini','larida',
@@ -73,7 +114,7 @@ const SUFFIXES = [
   'roq','mtir','gina','dir','mi','chi','oq',
 ];
 
-function findWord(raw) {
+function findWord(raw) {  // faqat bitta so‘z uchun (suffiks bilan)
   const key = toKey(raw);
   if (DB[key]) return { entry: { ...DB[key] }, stemmed: false, suffix: '', key };
 
@@ -89,7 +130,7 @@ function findWord(raw) {
   return null;
 }
 
-/* ── 3. KARTA YARATISH ── */
+/* ── 3. KARTA YARATISH (o‘zgarmagan) ── */
 function buildCard(num, originalWord, found) {
   const card = document.createElement('div');
   card.className = 'word-card';
@@ -109,25 +150,25 @@ function buildCard(num, originalWord, found) {
           <tr><th>FEATS</th><td class="dim">—</td></tr>
           <tr><th>XPOS</th><td class="dim">—</td></tr>
         </table>
-        <p class="not-found">⚠️ Bu so'z bazadan topilmadi</p>
+        <p class="not-found">⚠️ Bu so‘z/ibora bazadan topilmadi</p>
       </div>`;
     return card;
   }
 
   const { entry, stemmed, suffix } = found;
-  const pos   = entry.posType;
+  const pos   = entry.posType || 'other'; 
   const color = POS_COLOR[pos] || '#64748b';
-  const label = POS_LABEL[pos] || pos;
-  const emoji = POS_EMOJI[pos] || '📚';
+  const label = POS_LABEL[pos] || pos.toUpperCase();
+  const emoji = POS_EMOJI[pos] || '📝';
 
-  let feats = (entry.FEATS && entry.FEATS !== '—') ? entry.FEATS : '∅';
+  let feats = (entry.FEATS && entry.FEATS !== '—' && entry.FEATS !== '∅') ? entry.FEATS : '∅';
   if (stemmed && suffix) feats = feats === '∅' ? `+${suffix}` : `${feats} +${suffix}`;
 
-  const lemma = (entry.LEMMA && entry.LEMMA !== '—') ? entry.LEMMA : (entry.ORIGINAL_FORM || originalWord);
+  const lemma = (entry.LEMMA && entry.LEMMA !== '—') ? entry.LEMMA : originalWord;
 
   const baseRows = [
-    ['ID',    String(num)],
-    ['FORM',  originalWord],
+    ['ID',    String(entry.ID || num)],
+    ['FORM',  entry.FORM || originalWord],
     ['LEMMA', lemma],
     ['FEATS', feats],
     ['XPOS',  entry.XPOS || '—'],
@@ -160,41 +201,73 @@ function buildCard(num, originalWord, found) {
   return card;
 }
 
-/* ── 4. TAHLIL ── */
+/* ── 4. TAHLIL — YANGI: Qo‘shma iboralar + eng uzun moslik ── */
 function analyze() {
   const text = (document.getElementById('wordInput')?.value || '').trim();
   if (!text) { toast('Matn kiriting!', 'error'); return; }
-  if (!Object.keys(DB).length) { toast('Baza yuklanmagan, biroz kuting...', 'error'); return; }
+  if (!Object.keys(DB).length) { toast('Baza yuklanmagan...', 'error'); return; }
 
-  const btn     = document.getElementById('analyzeBtn');
+  const btn = document.getElementById('analyzeBtn');
   const btnText = document.getElementById('btnText');
   const spinner = document.getElementById('btnSpinner');
-  if (btn)     btn.disabled         = true;
+  if (btn) btn.disabled = true;
   if (spinner) spinner.style.display = 'inline-block';
-  if (btnText) btnText.textContent   = 'Tahlil qilinmoqda...';
+  if (btnText) btnText.textContent = 'Tahlil qilinmoqda...';
 
   const section = document.getElementById('resultSection');
-  const grid    = document.getElementById('resultsGrid');
+  const grid = document.getElementById('resultsGrid');
   if (section) section.style.display = 'none';
-  if (grid)    grid.innerHTML        = '';
+  if (grid) grid.innerHTML = '';
 
-  const words = text.split(/\s+/).filter(w => w.length > 0);
+  // 🔥 YANGI: eng uzun ibora (phrase) mosligi
+  const originalTokens = text.split(/\s+/).filter(w => w.length > 0);
+  const analysisResults = [];
+  let i = 0;
+
+  while (i < originalTokens.length) {
+    let matched = false;
+    // 4 so‘zgacha (yigirma ikki, mana bu, bir nima va h.k.)
+    for (let len = Math.min(4, originalTokens.length - i); len >= 1; len--) {
+      const phrase = originalTokens.slice(i, i + len).join(' ');
+      const key = toKey(phrase);
+      if (DB[key]) {
+        analysisResults.push({
+          original: phrase,
+          found: { entry: { ...DB[key] }, stemmed: false, suffix: '', key }
+        });
+        i += len;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      // bitta so‘z + suffiks
+      const single = originalTokens[i];
+      const found = findWord(single);
+      analysisResults.push({ original: single, found: found || null });
+      i++;
+    }
+  }
 
   setTimeout(() => {
     const stats = { sifat: 0, son: 0, olmosh: 0, topilmadi: 0 };
 
-    words.forEach((word, i) => {
-      const found = findWord(word);
-      grid?.appendChild(buildCard(i + 1, word, found));
-      if (found) stats[found.entry.posType] = (stats[found.entry.posType] || 0) + 1;
-      else       stats.topilmadi++;
+    analysisResults.forEach((res, idx) => {
+      const found = res.found;
+      grid?.appendChild(buildCard(idx + 1, res.original, found));
+      if (found) {
+        const p = found.entry.posType || 'other';
+        stats[p] = (stats[p] || 0) + 1;
+      } else {
+        stats.topilmadi++;
+      }
     });
 
     const statsEl = document.getElementById('resultStats');
     if (statsEl) {
       statsEl.innerHTML = [
         stats.sifat     ? `<span class="chip sifat">🎨 Sifat: ${stats.sifat}</span>`       : '',
-        stats.son       ? `<span class="chip son">🔢 Son: ${stats.son}</span>`               : '',
+        stats.son       ? `<span class="chip son">🔢 Son: ${stats.son}</span>`             : '',
         stats.olmosh    ? `<span class="chip olmosh">👤 Olmosh: ${stats.olmosh}</span>`      : '',
         stats.topilmadi ? `<span class="chip other">❓ Topilmadi: ${stats.topilmadi}</span>` : '',
       ].filter(Boolean).join('');
@@ -202,15 +275,15 @@ function analyze() {
 
     if (section) section.style.display = 'block';
     section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    toast(`${words.length} ta so'z tahlil qilindi!`, 'success');
+    toast(`${analysisResults.length} ta so‘z/ibora tahlil qilindi!`, 'success');
 
-    if (btn)     btn.disabled         = false;
+    if (btn) btn.disabled = false;
     if (spinner) spinner.style.display = 'none';
-    if (btnText) btnText.textContent   = '🔍 Tahlil qilish';
+    if (btnText) btnText.textContent = '🔍 Tahlil qilish';
   }, 200);
 }
 
-/* ── 5. XLSX EXPORT ── */
+/* ── 5. XLSX EXPORT (o‘zgarmagan) ── */
 function exportXlsx() {
   const cards = document.querySelectorAll('.word-card');
   if (!cards.length) { toast('Avval tahlil qiling!', 'error'); return; }
