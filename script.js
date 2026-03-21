@@ -8,11 +8,11 @@
 
 let DB = {};
 
-// SHABLONLARGA TO‘LIQ MOS USTUNLAR
+// SHABLONLARGA TO'LIQ MOS USTUNLAR
 const POS_COLS = {
   sifat:  ['Belgining xususiyati', 'Daraja', 'Tuzulishi', 'Yasalishi', 'Sifatning LMGlari'],
   son:    [" Ma'noviy xususiyatlari", "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"],
-  olmosh: ["Olmoshlarning ma’noviy guruhlari", 'Tuzilishi', 'Yasalishi', 'Kelishik', 'Son', 'Egalik', 'Olmoshlarning gapda bajaradigan vazifasiga ko‘ra turlari'],
+  olmosh: ["Olmoshlarning ma'noviy guruhlari", 'Tuzilishi', 'Yasalishi', 'Kelishik', 'Son', 'Egalik', "Olmoshlarning gapda bajaradigan vazifasiga ko\u2018ra turlari"],
 };
 
 const POS_LABEL = { sifat: 'Sifat', son: 'Son', olmosh: 'Olmosh', other: 'Boshqa' };
@@ -38,7 +38,7 @@ function toast(msg, type = 'info') {
   setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 300); }, 3500);
 }
 
-/* ── 1. DATABASE YUKLASH + TO‘G‘RI POS ANIQLASH ── */
+/* ── 1. DATABASE YUKLASH + TO'G'RI POS ANIQLASH ── */
 async function loadDatabase() {
   const statusEl = document.getElementById('dbStatus');
   const paths = ['./data/database.json', '/data/database.json', './database.json'];
@@ -58,12 +58,11 @@ async function loadDatabase() {
 
           const key = toKey(item.FORM);
 
-          // 🔥 YANGI: faqat qiymati bo‘sh bo‘lmagan ustunga qarab turkum aniqlash
           let posType = 'other';
-          if (item["Olmoshlarning ma’noviy guruhlari"] && 
-              item["Olmoshlarning ma’noviy guruhlari"] !== "—" && 
-              item["Olmoshlarning ma’noviy guruhlari"] !== "∅" && 
-              item["Olmoshlarning ma’noviy guruhlari"] !== "") {
+          if (item["Olmoshlarning ma'noviy guruhlari"] && 
+              item["Olmoshlarning ma'noviy guruhlari"] !== "—" && 
+              item["Olmoshlarning ma'noviy guruhlari"] !== "∅" && 
+              item["Olmoshlarning ma'noviy guruhlari"] !== "") {
             posType = 'olmosh';
           } else if (item["Belgining xususiyati"] && 
                      item["Belgining xususiyati"] !== "—" && 
@@ -78,16 +77,16 @@ async function loadDatabase() {
           }
 
           item.posType = posType;
-          DB[key] = item;   // oxirgi nusxa ustunlik qiladi (duplicate FORM lar uchun)
+          DB[key] = item;
           count++;
         });
       }
 
       if (statusEl) {
-        statusEl.textContent = `✅ Baza tayyor: ${count} ta so‘z`;
+        statusEl.textContent = `✅ Baza tayyor: ${count} ta so'z`;
         statusEl.style.color = '#16a34a';
       }
-      toast(`Baza yuklandi! ${count} ta so‘z (qo'shma iboralar qo‘llab-quvvatlanadi)`, 'success');
+      toast(`Baza yuklandi! ${count} ta so'z (qo'shma iboralar qo'llab-quvvatlanadi)`, 'success');
       return;
     } catch (err) {
       console.warn("Fayl o'qishda xatolik:", err);
@@ -98,10 +97,10 @@ async function loadDatabase() {
     statusEl.textContent = '❌ database.json topilmadi!';
     statusEl.style.color = '#dc2626';
   }
-  toast("database.json topilmadi! ./data/ yoki ildizga qo‘ying.", 'error');
+  toast("database.json topilmadi! ./data/ yoki ildizga qo'ying.", 'error');
 }
 
-/* ── 2. SO‘Z / IBORA QIDIRISH (SUFFIX + Qo‘shma) ── */
+/* ── 2. SO'Z QIDIRISH (suffiks bilan) ── */
 const SUFFIXES = [
   'larimizdan','larimizga','larimizni','larimizda','larining',
   'laridan','lariga','larini','larida',
@@ -114,7 +113,7 @@ const SUFFIXES = [
   'roq','mtir','gina','dir','mi','chi','oq',
 ];
 
-function findWord(raw) {  // faqat bitta so‘z uchun (suffiks bilan)
+function findWord(raw) {
   const key = toKey(raw);
   if (DB[key]) return { entry: { ...DB[key] }, stemmed: false, suffix: '', key };
 
@@ -130,7 +129,15 @@ function findWord(raw) {  // faqat bitta so‘z uchun (suffiks bilan)
   return null;
 }
 
-/* ── 3. KARTA YARATISH (o‘zgarmagan) ── */
+/* ── SO'Z SON (Num) ekanligini tekshirish ── */
+function isNum(word) {
+  const found = findWord(word);
+  if (!found) return false;
+  const xpos = (found.entry.XPOS || '').toLowerCase();
+  return xpos === 'num';
+}
+
+/* ── 3. KARTA YARATISH ── */
 function buildCard(num, originalWord, found) {
   const card = document.createElement('div');
   card.className = 'word-card';
@@ -150,7 +157,7 @@ function buildCard(num, originalWord, found) {
           <tr><th>FEATS</th><td class="dim">—</td></tr>
           <tr><th>XPOS</th><td class="dim">—</td></tr>
         </table>
-        <p class="not-found">⚠️ Bu so‘z/ibora bazadan topilmadi</p>
+        <p class="not-found">⚠️ Bu so'z/ibora bazadan topilmadi</p>
       </div>`;
     return card;
   }
@@ -201,7 +208,7 @@ function buildCard(num, originalWord, found) {
   return card;
 }
 
-/* ── 4. TAHLIL — YANGI: Qo‘shma iboralar + eng uzun moslik ── */
+/* ── 4. TAHLIL ── */
 function analyze() {
   const text = (document.getElementById('wordInput')?.value || '').trim();
   if (!text) { toast('Matn kiriting!', 'error'); return; }
@@ -219,15 +226,16 @@ function analyze() {
   if (section) section.style.display = 'none';
   if (grid) grid.innerHTML = '';
 
-  // 🔥 YANGI: eng uzun ibora (phrase) mosligi
   const originalTokens = text.split(/\s+/).filter(w => w.length > 0);
   const analysisResults = [];
   let i = 0;
 
   while (i < originalTokens.length) {
     let matched = false;
-    // 4 so‘zgacha (yigirma ikki, mana bu, bir nima va h.k.)
-    for (let len = Math.min(4, originalTokens.length - i); len >= 1; len--) {
+
+    // 1-qadam: DB da qo'shma ibora bormi? (4 so'zgacha, eng uzunidan)
+    const maxLen = Math.min(4, originalTokens.length - i);
+    for (let len = maxLen; len >= 2; len--) {
       const phrase = originalTokens.slice(i, i + len).join(' ');
       const key = toKey(phrase);
       if (DB[key]) {
@@ -240,13 +248,44 @@ function analyze() {
         break;
       }
     }
-    if (!matched) {
-      // bitta so‘z + suffiks
-      const single = originalTokens[i];
-      const found = findWord(single);
-      analysisResults.push({ original: single, found: found || null });
-      i++;
+
+    if (matched) continue;
+
+    // 2-qadam: DB da yo'q — ketma-ket Num+Num bo'lsa birlashtir
+    // Masalan: "yigirma ikki" DB da yo'q, lekin ikkalasi ham Num => qo'shma son
+    if (i + 1 < originalTokens.length && isNum(originalTokens[i]) && isNum(originalTokens[i + 1])) {
+      // Necha Num ketma-ket kelishini topamiz (max 4)
+      let numLen = 1;
+      while (numLen < 4 && i + numLen < originalTokens.length && isNum(originalTokens[i + numLen])) {
+        numLen++;
+      }
+      const phrase = originalTokens.slice(i, i + numLen).join(' ');
+      // Birinchi Num entryni asos qilib olamiz, FORM ni yangilaymiz
+      const baseFound = findWord(originalTokens[i]);
+      if (baseFound) {
+        const mergedEntry = {
+          ...baseFound.entry,
+          FORM:  phrase,
+          LEMMA: phrase,
+          FEATS: '∅',
+          posType: 'son',
+        };
+        analysisResults.push({
+          original: phrase,
+          found: { entry: mergedEntry, stemmed: false, suffix: '' }
+        });
+        i += numLen;
+        matched = true;
+      }
     }
+
+    if (matched) continue;
+
+    // 3-qadam: oddiy bitta so'z + suffiks
+    const single = originalTokens[i];
+    const found = findWord(single);
+    analysisResults.push({ original: single, found: found || null });
+    i++;
   }
 
   setTimeout(() => {
@@ -267,7 +306,7 @@ function analyze() {
     if (statsEl) {
       statsEl.innerHTML = [
         stats.sifat     ? `<span class="chip sifat">🎨 Sifat: ${stats.sifat}</span>`       : '',
-        stats.son       ? `<span class="chip son">🔢 Son: ${stats.son}</span>`             : '',
+        stats.son       ? `<span class="chip son">🔢 Son: ${stats.son}</span>`               : '',
         stats.olmosh    ? `<span class="chip olmosh">👤 Olmosh: ${stats.olmosh}</span>`      : '',
         stats.topilmadi ? `<span class="chip other">❓ Topilmadi: ${stats.topilmadi}</span>` : '',
       ].filter(Boolean).join('');
@@ -275,7 +314,7 @@ function analyze() {
 
     if (section) section.style.display = 'block';
     section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    toast(`${analysisResults.length} ta so‘z/ibora tahlil qilindi!`, 'success');
+    toast(`${analysisResults.length} ta so'z/ibora tahlil qilindi!`, 'success');
 
     if (btn) btn.disabled = false;
     if (spinner) spinner.style.display = 'none';
@@ -283,7 +322,7 @@ function analyze() {
   }, 200);
 }
 
-/* ── 5. XLSX EXPORT (o‘zgarmagan) ── */
+/* ── 5. XLSX EXPORT (o'zgarmagan) ── */
 function exportXlsx() {
   const cards = document.querySelectorAll('.word-card');
   if (!cards.length) { toast('Avval tahlil qiling!', 'error'); return; }
