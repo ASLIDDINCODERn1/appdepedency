@@ -1,75 +1,117 @@
 <!DOCTYPE html>
 <html lang="uz" data-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Morfologik Analizator</title>
-    
-    <link rel="stylesheet" href="style.css">
-    
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Morfologik Analizator</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
-    <div id="toastContainer" class="toast-container"></div>
+  <!-- Animated background -->
+  <div class="bg-scene">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="orb orb-4"></div>
+  </div>
 
-    <div class="theme-switch-wrapper">
-        <label class="theme-switch" for="checkbox" title="Tungi/Kunduzgi rejim">
-            <input type="checkbox" id="checkbox" />
-            <div class="slider round">
-                <i class="fas fa-sun"></i>
-                <i class="fas fa-moon"></i>
-            </div>
-        </label>
+  <!-- Toast -->
+  <div id="toastContainer"></div>
+
+  <!-- Theme Toggle -->
+  <div class="theme-switch-wrapper">
+    <button class="theme-toggle-btn" id="themeToggle" title="Tungi/Kunduzgi rejim">
+      <span class="toggle-icon icon-sun">☀️</span>
+      <span class="toggle-icon icon-moon">🌙</span>
+    </button>
+  </div>
+
+  <div class="container">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <i class="fas fa-brain"></i>
+      </div>
+      <h1>Morfologik Analizator</h1>
+      <p>O'zbek tili so'zlarini morfologik tahlil qilish tizimi</p>
+    </header>
+
+    <!-- Main Input Card -->
+    <div class="main-card glass">
+      <div class="input-wrapper">
+        <label for="wordInput">Matn yoki gap kiriting:</label>
+        <div class="textarea-container">
+          <i class="fas fa-paragraph input-icon"></i>
+          <textarea id="wordInput" placeholder="Masalan: Ellik sakkizta ko'chat ekildi..." rows="4"></textarea>
+        </div>
+      </div>
+      <button class="btn-primary" id="analyzeBtn">
+        <span id="btnText">🔍 Tahlil qilish</span>
+        <i class="fas fa-spinner fa-spin" id="btnSpinner" style="display:none;"></i>
+      </button>
     </div>
 
-    <div class="container">
-        
-        <header class="header">
-            <div class="logo">
-                <i class="fas fa-brain"></i>
-            </div>
-            <h1>Morfologik Analizator</h1>
-        </header>
-        
-        <div class="main-card">
-            <div class="input-wrapper">
-                <label for="wordInput" style="display: block; margin-bottom: 10px; font-weight: 600;">Matn yoki gap kiriting:</label>
-                <div class="textarea-container">
-                    <i class="fas fa-paragraph input-icon"></i>
-                    <textarea id="wordInput" placeholder="Masalan: Ushbu kitobni sotib olishim kerak..." rows="4"></textarea>
-                </div>
-            </div>
-            
-            <button class="btn-primary" id="analyzeBtn">
-                <span id="btnText">Tahlil qilish</span> 
-                <i class="fas fa-spinner fa-spin" id="btnSpinner" style="display: none;"></i>
-            </button>
-        </div>
+    <!-- Results -->
+    <div class="result-section" id="resultSection" style="display:none;">
 
-        <div class="result-section" id="resultSection" style="display: none;">
-            
-            <div class="result-toolbar">
-                <h3>Tahlil Natijalari</h3>
-                <div class="action-buttons">
-                    <button class="btn-outline" id="copyBtn">
-                        <i class="far fa-copy"></i> Nusxalash
-                    </button>
-                    <button class="btn-outline-success" id="exportXlsxBtn">
-                        <i class="fas fa-file-excel"></i> XLSX Yuklab olish
-                    </button>
-                </div>
-            </div>
-            
-            <div class="results-grid" id="resultsGrid">
-                </div>
-            
+      <div class="result-toolbar glass">
+        <div>
+          <h3>📊 Tahlil Natijalari</h3>
+          <div class="result-stats" id="resultStats"></div>
         </div>
+        <div class="action-buttons">
+          <button class="btn-outline" id="copyBtn">
+            <i class="far fa-copy"></i> Nusxalash
+          </button>
+          <button class="btn-outline-success" id="exportXlsxBtn">
+            <i class="fas fa-file-excel"></i> XLSX
+          </button>
+        </div>
+      </div>
+
+      <div class="results-grid" id="resultsGrid"></div>
+
     </div>
+  </div>
 
-    <script src="script.js"></script>
+  <script src="script.js"></script>
+  <script>
+    // Theme toggle
+    const toggleBtn = document.getElementById('themeToggle');
+    const html = document.documentElement;
+
+    // Saved theme
+    if (localStorage.getItem('theme') === 'dark') {
+      html.setAttribute('data-theme', 'dark');
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    });
+
+    // Copy button
+    document.getElementById('copyBtn')?.addEventListener('click', () => {
+      const cards = document.querySelectorAll('.word-card');
+      if (!cards.length) return;
+      let text = '';
+      cards.forEach(card => {
+        card.querySelectorAll('tr').forEach(tr => {
+          const th = tr.querySelector('th'), td = tr.querySelector('td');
+          if (th && td) text += `${th.innerText.trim()}: ${td.innerText.trim()}\n`;
+        });
+        text += '\n';
+      });
+      navigator.clipboard.writeText(text).then(() => {
+        // toast called from script.js context
+      });
+    });
+  </script>
 </body>
 </html>
