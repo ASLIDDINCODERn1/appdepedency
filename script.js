@@ -94,9 +94,14 @@ async function loadDatabase() {
 
         item.posType = posType;
 
-        /* Priority: son > olmosh > sifat > ot/other
-           Sababi: bir, ikki, o'n... kabi sonlar uchta datasetda bor,
-           son dataseti ustunlik qilishi kerak */
+        /* XPOS asosida final posType tuzatish:
+           Son datasetida XPOS=P bo'lgan so'zlar (men, sen, u...) aslida olmosh.
+           Son datasetida XPOS=Num bo'lganlari haqiqiy son. */
+        if (posType === 'son' && item.XPOS === 'P') posType = 'olmosh';
+        if (posType === 'son' && item.XPOS === 'P') item.posType = 'olmosh';
+
+        /* Priority: Num(son) > olmosh > sifat > other
+           bir, ikki, o'n kabi XPOS=Num sonlar son datasetida ustunlik qilsin */
         const POS_PRIORITY = { son: 4, olmosh: 3, sifat: 2, fel: 1, ravish: 1, ot: 0 };
         const existingPriority = key in DB ? (POS_PRIORITY[DB[key].posType] ?? 0) : -1;
         const newPriority = POS_PRIORITY[posType] ?? 0;
