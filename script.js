@@ -1,4 +1,3 @@
-
 /* ============================================================
    script.js — O'ZBEK MORFOLOGIK TAHLIL
    ============================================================ */
@@ -276,29 +275,37 @@ function analyze() {
         const baseFound = findWord(tokens[i]);
         const lastFound = findWord(tokens[i + numLen - 1]);
 
-        /* ✅ FEATS: lastFound.entry.FEATS dan olamiz (stemmed emas) */
+        /* FEATS: lastFound.entry.FEATS dan olamiz */
         const lastFeats = lastFound
           ? (lastFound.entry.FEATS && lastFound.entry.FEATS !== '∅' && lastFound.entry.FEATS !== '—'
               ? lastFound.entry.FEATS.trim()
               : '')
           : '';
 
+        /* ✅ LEMMA: base LEMMA + last LEMMA (kesmasdan) */
+        const baseLemma = baseFound ? (baseFound.entry.LEMMA || tokens[i]) : tokens[i];
+        const lastLemma = lastFound ? (lastFound.entry.LEMMA || tokens[i + numLen - 1]) : tokens[i + numLen - 1];
+        const mergedLemma = numLen > 1 ? `${baseLemma} ${lastLemma}` : baseLemma;
+
+        /* ✅ Son ustunlarini lastFound dan olamiz — kalit nomlar ANIQ */
+        const sonCols = [COL_SON_MANOV, "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"];
+        const sonColValues = {};
+        if (lastFound) {
+          sonCols.forEach(col => {
+            const v = lastFound.entry[col];
+            sonColValues[col] = (v && v !== '—') ? v : '—';
+          });
+        }
+
         const merged = {
           ...(baseFound ? baseFound.entry : {}),
           FORM:    phrase,
-          LEMMA:   phrase.replace(/ta$|inchi$|nchi$/i, '').trim() || phrase,
+          LEMMA:   mergedLemma,
           FEATS:   lastFeats || '∅',
           XPOS:    'Num',
           posType: 'son',
+          ...sonColValues,   /* son ustunlarini ustiga yozamiz */
         };
-        /* Son POS_COLS qiymatlarini lastFound dan olamiz */
-        if (lastFound) {
-          [COL_SON_MANOV, "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"].forEach(col => {
-            if (lastFound.entry[col] && lastFound.entry[col] !== '—') {
-              merged[col] = lastFound.entry[col];
-            }
-          });
-        }
 
         const suf = lastFeats ? lastFeats.replace(/^\+/, '').split('+')[0] : '';
         results.push({ original: phrase, found: { entry: merged, stemmed: !!suf, suffix: suf } });
