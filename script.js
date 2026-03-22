@@ -94,7 +94,13 @@ async function loadDatabase() {
 
         item.posType = posType;
 
-        if (!(key in DB) || (DB[key].posType === 'ot' && posType !== 'ot')) {
+        /* Priority: son > olmosh > sifat > ot/other
+           Sababi: bir, ikki, o'n... kabi sonlar uchta datasetda bor,
+           son dataseti ustunlik qilishi kerak */
+        const POS_PRIORITY = { son: 4, olmosh: 3, sifat: 2, fel: 1, ravish: 1, ot: 0 };
+        const existingPriority = key in DB ? (POS_PRIORITY[DB[key].posType] ?? 0) : -1;
+        const newPriority = POS_PRIORITY[posType] ?? 0;
+        if (newPriority > existingPriority) {
           DB[key] = item;
         }
         count++;
