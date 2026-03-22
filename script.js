@@ -282,20 +282,28 @@ function analyze() {
               : '')
           : '';
 
-        /* ✅ LEMMA: base LEMMA + last LEMMA (kesmasdan) */
-        const baseLemma = baseFound ? (baseFound.entry.LEMMA || tokens[i]) : tokens[i];
-        const lastLemma = lastFound ? (lastFound.entry.LEMMA || tokens[i + numLen - 1]) : tokens[i + numLen - 1];
-        const mergedLemma = numLen > 1 ? `${baseLemma} ${lastLemma}` : baseLemma;
+        /* LEMMA: barcha tokenlar uchun LEMMA larini birlashtir
+           Masalan: tokens=["ellik","uchinchi"] -> lemmas=["ellik","uch"] -> "ellik uch" */
+        const allLemmas = tokens.slice(i, i + numLen).map((tok, idx) => {
+          const fw = idx === 0 ? baseFound : (idx === numLen - 1 ? lastFound : findWord(tok));
+          return fw ? (fw.entry.LEMMA || tok) : tok;
+        });
+        const mergedLemma = allLemmas.join(' ');
 
-        /* ✅ Son ustunlarini lastFound dan olamiz — kalit nomlar ANIQ */
+        /* Son ustunlarini - base yoki last - qaysi birida son dataset bo'lsa o'sha dan olamiz
+           Masalan: "ellik uchinchi" da ellik son dataset da, uchinchi sifat dataset da.
+           Shuning uchun faqat lastFound emas, ikkalasini tekshiramiz. */
         const sonCols = [COL_SON_MANOV, "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"];
         const sonColValues = {};
-        if (lastFound) {
-          sonCols.forEach(col => {
-            const v = lastFound.entry[col];
-            sonColValues[col] = (v && v !== '—') ? v : '—';
-          });
-        }
+        const allEntries = [baseFound, lastFound].filter(Boolean).map(f => f.entry);
+        sonCols.forEach(col => {
+          let found_val = '—';
+          for (const ent of allEntries) {
+            const v = ent[col];
+            if (v && v !== '—') { found_val = v; break; }
+          }
+          sonColValues[col] = found_val;
+        });
 
         const merged = {
           ...(baseFound ? baseFound.entry : {}),
