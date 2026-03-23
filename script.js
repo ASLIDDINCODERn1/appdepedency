@@ -121,27 +121,39 @@ async function loadDatabase() {
 /* ==================== QIDIRUV ==================== */
 function findWord(raw) {
   const key = toKey(raw);
-  if (DB[key]) return { entry: { ...DB[key] }, stemmed: false, suffix: '' };
+
+  /* Direct hit — lekin XPOS bo'sh bo'lsa (bo'sh entry) suffix loop sinash */
+  if (DB[key] && DB[key].XPOS) {
+    return { entry: { ...DB[key] }, stemmed: false, suffix: '' };
+  }
 
   for (const suf of [...SUFFIXES, ...SON_SUFFIXES]) {
     const sk = toKey(suf);
     if (key.length > sk.length + 1 && key.endsWith(sk)) {
       const root = key.slice(0, -sk.length);
-      if (root.length >= 2 && DB[root]) {
+      if (root.length >= 2 && DB[root] && DB[root].XPOS) {
         const entry = { ...DB[root] };
         if (SON_SUFFIXES.includes(suf)) entry.posType = 'son';
         return { entry, stemmed: true, suffix: suf };
       }
     }
   }
+
+  /* Suffix orqali topilmasa, direct hit ni qaytaramiz (XPOS bo'lmasa ham) */
+  if (DB[key]) return { entry: { ...DB[key] }, stemmed: false, suffix: '' };
+
   return null;
 }
 
 function isNum(word) {
   if (/^\d+$/.test(word)) return true;
   const found = findWord(word);
-  if (found && (found.entry.XPOS || '').toLowerCase() === 'num') return true;
-  return /yigirma|o'ttiz|qirq|ellik|oltmish|yetmish|sakson|to'qson|yuz|ming|million|milliard/i.test(word);
+  if (found) {
+    const xpos = (found.entry.XPOS || '').toLowerCase();
+    if (xpos === 'num') return true;
+  }
+  /* Regex fallback — son so'zlari */
+  return /yigirma|ottiz|qirq|ellik|oltmish|yetmish|sakson|toqson|yuz|ming|million|milliard|birinchi|ikkinchi|uchinchi|tortinchi|beshinchi|oltinchi|yettinchi|sakkizinchi|toqqizinchi|oninchi/i.test(toKey(word));
 }
 
 function isOlmosh(word) {
