@@ -78,30 +78,28 @@ async function loadDatabase() {
         const key = toKey(formStr);
         if (!key) return;
 
-        /* POS aniqlash — ustun MAVJUDLIGI bo'yicha */
-        let posType = 'ot';
-        if (COL_OLMOSH_GRUPLAR in item) {
-          posType = 'olmosh';
-        } else if ('Belgining xususiyati' in item) {
-          posType = 'sifat';
-        } else if (COL_SON_MANOV in item) {
-          posType = 'son';
-        } else if (item["Fe'lning ma'noviy guruhlari"] || item.Zamon || item.Shaxs || item.XPOS === 'V' || item.XPOS === 'VB') {
-          posType = 'fel';
-        } else if (item["Ravishning ma'noviy guruhlari"] || item.XPOS === 'RR' || item.XPOS === 'MD') {
-          posType = 'ravish';
+        /* POS aniqlash — XPOS asosida (to'g'riroq)
+           Dataset ustunlari faqat qo'shimcha ma'lumot, XPOS hal qiluvchi */
+        const XPOS_MAP = {
+          'P': 'olmosh', 'p': 'olmosh',
+          'JJ': 'sifat', 'Adj': 'sifat', 'J': 'sifat',
+          'Num': 'son', 'NUM': 'son',
+          'V': 'fel', 'VB': 'fel', 'v': 'fel', ' V': 'fel',
+          'RR': 'ravish', 'MD': 'ravish', 'R': 'ravish',
+        };
+        let posType = XPOS_MAP[item.XPOS] || 'ot';
+
+        /* XPOS yo'q yoki noma'lum bo'lsa — dataset ustunlaridan aniqlash */
+        if (posType === 'ot') {
+          if (COL_OLMOSH_GRUPLAR in item) posType = 'olmosh';
+          else if ('Belgining xususiyati' in item) posType = 'sifat';
+          else if (COL_SON_MANOV in item) posType = 'son';
         }
 
         item.posType = posType;
 
-        /* XPOS asosida final posType tuzatish:
-           Son datasetida XPOS=P bo'lgan so'zlar (men, sen, u...) aslida olmosh.
-           Son datasetida XPOS=Num bo'lganlari haqiqiy son. */
-        if (posType === 'son' && item.XPOS === 'P') posType = 'olmosh';
-        if (posType === 'son' && item.XPOS === 'P') item.posType = 'olmosh';
-
-        /* Priority: Num(son) > olmosh > sifat > other
-           bir, ikki, o'n kabi XPOS=Num sonlar son datasetida ustunlik qilsin */
+        /* Priority: son > olmosh > sifat > other
+           Bir xil FORM uchun son dataset ustunlik qilsin */
         const POS_PRIORITY = { son: 4, olmosh: 3, sifat: 2, fel: 1, ravish: 1, ot: 0 };
         const existingPriority = key in DB ? (POS_PRIORITY[DB[key].posType] ?? 0) : -1;
         const newPriority = POS_PRIORITY[posType] ?? 0;
@@ -286,11 +284,15 @@ function analyze() {
         const baseFound = findWord(tokens[i]);
         const lastFound = findWord(tokens[i + numLen - 1]);
 
-        /* FEATS: lastFound.entry.FEATS dan olamiz */
+        /* FEATS: stemmed bo'lsa suffix ni ishlatamiz, aks holda entry.FEATS
+           Masalan: "yettita" -> stemmed=True, suffix="ta" -> FEATS="+ta"
+                    "sakkizta" -> stemmed=False, entry.FEATS="+ta" -> FEATS="+ta" */
         const lastFeats = lastFound
-          ? (lastFound.entry.FEATS && lastFound.entry.FEATS !== '∅' && lastFound.entry.FEATS !== '—'
-              ? lastFound.entry.FEATS.trim()
-              : '')
+          ? (lastFound.stemmed && lastFound.suffix
+              ? '+' + lastFound.suffix
+              : (lastFound.entry.FEATS && lastFound.entry.FEATS !== '∅' && lastFound.entry.FEATS !== '—'
+                  ? lastFound.entry.FEATS.trim()
+                  : ''))
           : '';
 
         /* LEMMA: barcha tokenlar uchun LEMMA larini birlashtir
