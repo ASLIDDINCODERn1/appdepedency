@@ -14,11 +14,22 @@ const COL_OLMOSH_VAZIFA  = "Olmoshlarning gapda bajaradigan vazifasiga ko'ra tur
 const COL_SON_MANOV      = " Ma'noviy xususiyatlari";
 const COL_SIFAT_BELGI    = 'Belgining xususiyati';
 
+/* Ravish ustunlari OlmoshvaRavish.json da Column13-18 sifatida keladi */
+const COL_RAVISH_MAP = {
+  'Column13': "Ravishlarning ma'noviy guruhlari",
+  'Column14': 'Tuzilishi',
+  'Column15': 'Yasalishi',
+  'Column16': 'Kelishik',
+  'Column17': 'Son',
+  'Column18': 'Egalik',
+};
+
 const POS_COLS = {
   sifat:  [COL_SIFAT_BELGI, 'Daraja', 'Tuzulishi', 'Yasalishi', 'Sifatning LMGlari'],
   olmosh: [COL_OLMOSH_GRUPLAR, 'Tuzilishi', 'Yasalishi', 'Kelishik', 'Son', 'Egalik', COL_OLMOSH_VAZIFA],
   son:    [COL_SON_MANOV, "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"],
-  ot: [], fel: [], ravish: []
+  ravish: ['Column13','Column14','Column15','Column16','Column17','Column18'],
+  ot: [], fel: []
 };
 const ALL_POS_COLS = new Set(Object.values(POS_COLS).flat());
 
@@ -99,24 +110,23 @@ function toast(msg, type='info') {
 function detectPos(item, fileHint) {
   const xpos = item.XPOS || '';
 
-  /* 1. XPOS aniq bo'lsa */
+  /* 1. XPOS HER DOIM ustunlik qiladi — dataset nomi emas
+     VB=fel, V=fel, RR=ravish, P=olmosh, JJ=sifat, Num=son */
   const fromXpos = XPOS_MAP[xpos];
-  if (fromXpos && fromXpos !== 'ot') return fromXpos;
+  if (fromXpos) return fromXpos;
 
-  /* 2. Ustun qiymatidan */
+  /* 2. XPOS yo'q yoki noma'lum bo'lsa — ustun qiymatidan */
   if (COL_SIFAT_BELGI in item && !['—',''].includes(String(item[COL_SIFAT_BELGI]).trim())) return 'sifat';
   if (COL_SON_MANOV   in item && !['—',''].includes(String(item[COL_SON_MANOV]).trim()))   return 'son';
   if (COL_OLMOSH_GRUPLAR in item && !['—',''].includes(String(item[COL_OLMOSH_GRUPLAR]).trim())) return 'olmosh';
+  if (item['Column13']  && !['—',''].includes(String(item['Column13']).trim()))   return 'ravish';
 
-  /* 3. XPOS=N/ot/... -> fayl hint bilan */
-  if (fromXpos) return fromXpos;
+  /* 3. Fayl hint */
+  if (fileHint === 'olmosh') return 'olmosh';
+  if (fileHint === 'son')    return 'son';
+  if (fileHint === 'sifat')  return 'sifat';
 
-  /* 4. Fayl hint */
-  if (fileHint === 'olmosh') {
-    if (xpos === 'RR' || xpos === 'MD') return 'ravish';
-    return 'olmosh';
-  }
-  return fileHint || 'ot';
+  return 'ot';
 }
 
 /* ==================== DATABASE YUKLASH ==================== */
@@ -161,9 +171,16 @@ async function loadDatabase() {
             item.posType   = pos;
             item._file     = fileName;
 
-            /* Alohida DB ga yoz — to'liqroq entry ustunlik qiladi */
+            /* Alohida DB ga yoz:
+             1. XPOS li entry har doim XPOS siz entry dan ustun
+             2. Ikki XPOS li bo'lsa — to'liqroq (entryScore yuqori) ustun */
             const db = DBs[pos] || DBs.ot;
-            if (!(key in db) || entryScore(item) > entryScore(db[key])) {
+            const existing = db[key];
+            const newHasXpos = !!(item.XPOS && item.XPOS.trim());
+            const oldHasXpos = !!(existing?.XPOS && existing.XPOS.trim());
+            if (!existing
+                || (!oldHasXpos && newHasXpos)
+                || (oldHasXpos === newHasXpos && entryScore(item) > entryScore(existing))) {
               db[key] = item;
             }
             count++;
@@ -310,7 +327,9 @@ function buildCard(num, displayWord, found) {
 
   (POS_COLS[pos]||[]).forEach(col => {
     const v = (entry[col] && String(entry[col]).trim() !== '—') ? entry[col] : '—';
-    tRows += `<tr><th>${col}</th><td class="${v==='—'?'dim':''}">${v}</td></tr>`;
+    /* Ravish uchun Column* kalitlarini o'qilishi oson nomga aylantirish */
+    const label = (pos === 'ravish' && COL_RAVISH_MAP[col]) ? COL_RAVISH_MAP[col] : col;
+    tRows += `<tr><th>${label}</th><td class="${v==='—'?'dim':''}">${v}</td></tr>`;
   });
 
   const skipCols = new Set([...BASE_KEYS, ...ALL_POS_COLS]);
