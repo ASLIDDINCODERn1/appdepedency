@@ -1,27 +1,46 @@
 /* ============================================================
    script.js — O'ZBEK MORFOLOGIK TAHLIL
+   3 ta JSON fayl: Son.json, Sifat.json, OlmoshvaRavish.json
    ============================================================ */
 
-let DB = {};
+let DB = {};  // { key: entry } — barcha so'zlar birga
 
-/* ==================== TURKUM KONFIGURATSIYASI ==================== */
+/* ==================== KONFIGURATSIYA ==================== */
 const POS_LABEL = { ot: 'Ot', fel: "Fe'l", sifat: 'Sifat', son: 'Son', ravish: 'Ravish', olmosh: 'Olmosh' };
 const POS_COLOR = { ot: '#8b5cf6', fel: '#ec4899', sifat: '#7c3aed', son: '#0891b2', ravish: '#14b8a6', olmosh: '#059669' };
 const POS_EMOJI = { ot: '📕', fel: '🏃', sifat: '🎨', son: '🔢', ravish: '⚡', olmosh: '👤' };
 
-const COL_OLMOSH_GRUPLAR = 'Olmoshlarning ma\u2019noviy guruhlari';
-const COL_OLMOSH_VAZIFA  = 'Olmoshlarning gapda bajaradigan vazifasiga ko\u2018ra turlari';
+/* Har bir fayl uchun aniq ustun kalitlari */
+const COL_OLMOSH_GRUPLAR = "Olmoshlarning ma'noviy guruhlari";
+const COL_OLMOSH_VAZIFA  = "Olmoshlarning gapda bajaradigan vazifasiga ko'ra turlari";
 const COL_SON_MANOV      = " Ma'noviy xususiyatlari";
+const COL_SIFAT_BELGI    = 'Belgining xususiyati';
 
 const POS_COLS = {
-  sifat:  ['Belgining xususiyati', 'Daraja', 'Tuzulishi', 'Yasalishi', 'Sifatning LMGlari'],
+  sifat:  [COL_SIFAT_BELGI, 'Daraja', 'Tuzulishi', 'Yasalishi', 'Sifatning LMGlari'],
   olmosh: [COL_OLMOSH_GRUPLAR, 'Tuzilishi', 'Yasalishi', 'Kelishik', 'Son', 'Egalik', COL_OLMOSH_VAZIFA],
   son:    [COL_SON_MANOV, "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"],
   ot: [], fel: [], ravish: []
 };
-
-/* Barcha POS_COLS kalitlari — buildCard da "keraksiz ustun" filtrash uchun */
 const ALL_POS_COLS = new Set(Object.values(POS_COLS).flat());
+
+/* XPOS -> posType mapping */
+const XPOS_MAP = {
+  'P': 'olmosh', 'p': 'olmosh',
+  'JJ': 'sifat', 'Adj': 'sifat', 'J': 'sifat',
+  'Num': 'son',  'NUM': 'son',
+  'V':  'fel',   'VB': 'fel',  'v': 'fel',
+  'RR': 'ravish','MD': 'ravish','R': 'ravish',
+  'N':  'ot',    'NER': 'ot',   'C': 'ot',
+  'II': 'ot',    'Prt': 'ot',   'UH': 'ot',
+};
+
+/* Fayl nomi -> dataset ustun kaliti -> posType */
+const FILE_CONFIG = {
+  'Son':           { key: 'Son',           posHint: 'son' },
+  'Sifat':         { key: 'Sifat',         posHint: 'sifat' },
+  'OlmoshvaRavish':{ key: 'OlmoshvaRavish',posHint: 'olmosh' },
+};
 
 const SON_SUFFIXES = [
   'ta','tasi','tadan','taga','tani','tada','taning',
@@ -55,78 +74,125 @@ function toast(msg, type = 'info') {
   setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 300); }, 3500);
 }
 
+/* ==================== POS ANIQLASH ==================== */
+function detectPosType(item, fileHint) {
+  const xpos = item.XPOS || '';
+
+  /* 1. XPOS dan aniq aniqlash */
+  const fromXpos = XPOS_MAP[xpos];
+
+  /* 2. Ustun mavjudligidan aniqlash */
+  let fromCol = null;
+  if (COL_SIFAT_BELGI in item && item[COL_SIFAT_BELGI] !== '—' && item[COL_SIFAT_BELGI] !== '') {
+    fromCol = 'sifat';
+  } else if (COL_SON_MANOV in item && item[COL_SON_MANOV] !== '—' && item[COL_SON_MANOV] !== '') {
+    fromCol = 'son';
+  } else if (COL_OLMOSH_GRUPLAR in item && item[COL_OLMOSH_GRUPLAR] !== '—' && item[COL_OLMOSH_GRUPLAR] !== '') {
+    fromCol = 'olmosh';
+  }
+
+  /* 3. Prioritet: XPOS aniq bo'lsa ustunlik qiladi
+        XPOS=JJ/Adj/P/Num -> aniq
+        XPOS=N/V/... -> fayl hint ishlaydi */
+  if (fromXpos && ['olmosh','sifat','son','ravish','fel'].includes(fromXpos)) {
+    return fromXpos;
+  }
+  if (fromCol) return fromCol;
+  if (fromXpos) return fromXpos;
+
+  /* 4. Fayl dan hint */
+  if (fileHint === 'olmosh') {
+    if (xpos === 'RR' || xpos === 'MD') return 'ravish';
+    return 'olmosh';
+  }
+  if (fileHint === 'son') return 'son';
+  if (fileHint === 'sifat') return 'sifat';
+
+  return 'ot';
+}
+
 /* ==================== DATABASE YUKLASH ==================== */
 async function loadDatabase() {
-  const paths = ['./data/database.json', '/data/database.json', './database.json'];
-  for (const path of paths) {
-    try {
-      const res = await fetch(path);
-      if (!res.ok) continue;
-      const rawData = await res.json();
-      DB = {};
-      let count = 0;
+  const statusEl = document.getElementById('dbStatus');
+  DB = {};
+  let totalCount = 0;
+  let loadedFiles = 0;
 
-      const arr = Array.isArray(rawData)
-        ? rawData
-        : (rawData.Dataset2 || rawData.dataset2 || []);
+  const POS_PRIORITY = { son: 4, olmosh: 3, sifat: 2, ravish: 2, fel: 1, ot: 0 };
 
-      arr.forEach(item => {
-        if (!item || !item.FORM || item.ID === 'ID') return;
-        const formStr = String(item.FORM).trim();
-        if (!formStr || formStr === 'FORM') return;
+  /* Har 3 faylni parallel yuklaymiz */
+  const fileNames = ['Son', 'Sifat', 'OlmoshvaRavish'];
+  const basePaths = ['./data/', '/data/', './'];
 
-        const key = toKey(formStr);
-        if (!key) return;
+  for (const fileName of fileNames) {
+    let loaded = false;
+    for (const base of basePaths) {
+      try {
+        const res = await fetch(`${base}${fileName}.json`);
+        if (!res.ok) continue;
 
-        /* POS aniqlash — XPOS asosida (to'g'riroq)
-           Dataset ustunlari faqat qo'shimcha ma'lumot, XPOS hal qiluvchi */
-        const XPOS_MAP = {
-          'P': 'olmosh', 'p': 'olmosh',
-          'JJ': 'sifat', 'Adj': 'sifat', 'J': 'sifat',
-          'Num': 'son', 'NUM': 'son',
-          'V': 'fel', 'VB': 'fel', 'v': 'fel', ' V': 'fel',
-          'RR': 'ravish', 'MD': 'ravish', 'R': 'ravish',
-        };
-        let posType = XPOS_MAP[item.XPOS] || 'ot';
+        const rawData = await res.json();
+        const config  = FILE_CONFIG[fileName];
+        const arr     = rawData[config.key] || rawData[fileName] || (Array.isArray(rawData) ? rawData : []);
+        let fileCount = 0;
 
-        /* XPOS yo'q yoki noma'lum bo'lsa — dataset ustunlaridan aniqlash */
-        if (posType === 'ot') {
-          if (COL_OLMOSH_GRUPLAR in item) posType = 'olmosh';
-          else if ('Belgining xususiyati' in item) posType = 'sifat';
-          else if (COL_SON_MANOV in item) posType = 'son';
-        }
+        arr.forEach(item => {
+          if (!item || !item.FORM || item.ID === 'ID') return;
+          const formStr = String(item.FORM).trim();
+          if (!formStr || formStr === 'FORM') return;
 
-        item.posType = posType;
+          const key = toKey(formStr);
+          if (!key) return;
 
-        /* Priority: son > olmosh > sifat > other
-           Bir xil FORM uchun son dataset ustunlik qilsin */
-        const POS_PRIORITY = { son: 4, olmosh: 3, sifat: 2, fel: 1, ravish: 1, ot: 0 };
-        const existingPriority = key in DB ? (POS_PRIORITY[DB[key].posType] ?? 0) : -1;
-        const newPriority = POS_PRIORITY[posType] ?? 0;
-        if (newPriority > existingPriority) {
-          DB[key] = item;
-        }
-        count++;
-      });
+          /* posType aniqlash */
+          const posType = detectPosType(item, config.posHint);
+          item.posType  = posType;
+          item._source  = fileName; /* qaysi fayldan ekanini eslab qolamiz */
 
-      toast(`Database yuklandi! ${count} ta so'z`, 'success');
-      return;
-    } catch (e) {
-      console.warn('DB load error:', e);
+          /* Priority: son > olmosh/ravish > sifat > ot */
+          const existing = POS_PRIORITY[DB[key]?.posType] ?? -1;
+          const incoming = POS_PRIORITY[posType] ?? 0;
+          if (incoming > existing || !(key in DB)) {
+            DB[key] = item;
+          }
+          fileCount++;
+        });
+
+        totalCount += fileCount;
+        loadedFiles++;
+        console.log(`✅ ${fileName}.json: ${fileCount} ta yozuv`);
+        loaded = true;
+        break;
+      } catch (e) {
+        console.warn(`${fileName}.json yuklashda xato:`, e);
+      }
+    }
+    if (!loaded) {
+      console.warn(`❌ ${fileName}.json topilmadi`);
+      toast(`${fileName}.json topilmadi!`, 'error');
     }
   }
-  toast("database.json topilmadi!", 'error');
+
+  const uniqueCount = Object.keys(DB).length;
+  if (statusEl) {
+    statusEl.textContent = loadedFiles === 3
+      ? `✅ Baza tayyor: ${uniqueCount} ta so'z`
+      : `⚠️ ${loadedFiles}/3 fayl yuklandi: ${uniqueCount} ta so'z`;
+    statusEl.style.color = loadedFiles === 3 ? '#16a34a' : '#d97706';
+  }
+  toast(`${loadedFiles} ta fayl yuklandi! ${uniqueCount} ta so'z`, loadedFiles === 3 ? 'success' : 'info');
 }
 
 /* ==================== QIDIRUV ==================== */
 function findWord(raw) {
   const key = toKey(raw);
 
-  /* Direct hit — lekin XPOS bo'sh bo'lsa (bo'sh entry) suffix loop sinash */
+  /* Direct hit — lekin XPOS bo'sh bo'lsa suffix loop sinash */
   if (DB[key] && DB[key].XPOS) {
     return { entry: { ...DB[key] }, stemmed: false, suffix: '' };
   }
 
+  /* Suffix loop */
   for (const suf of [...SUFFIXES, ...SON_SUFFIXES]) {
     const sk = toKey(suf);
     if (key.length > sk.length + 1 && key.endsWith(sk)) {
@@ -139,7 +205,7 @@ function findWord(raw) {
     }
   }
 
-  /* Suffix orqali topilmasa, direct hit ni qaytaramiz (XPOS bo'lmasa ham) */
+  /* XPOS bo'lmasa ham direct hit qaytaramiz */
   if (DB[key]) return { entry: { ...DB[key] }, stemmed: false, suffix: '' };
 
   return null;
@@ -148,28 +214,27 @@ function findWord(raw) {
 function isNum(word) {
   if (/^\d+$/.test(word)) return true;
   const found = findWord(word);
-  if (found) {
-    const xpos = (found.entry.XPOS || '').toLowerCase();
-    if (xpos === 'num') return true;
-  }
-  /* Regex fallback — son so'zlari */
-  return /yigirma|ottiz|qirq|ellik|oltmish|yetmish|sakson|toqson|yuz|ming|million|milliard|birinchi|ikkinchi|uchinchi|tortinchi|beshinchi|oltinchi|yettinchi|sakkizinchi|toqqizinchi|oninchi/i.test(toKey(word));
+  if (found && ['num', 'NUM', 'Num'].includes(found.entry.XPOS)) return true;
+  /* Son so'zlari regex */
+  const k = toKey(word);
+  return /yigirma|ottiz|qirq|ellik|oltmish|yetmish|sakson|toqson|yuz|ming|million|milliard/.test(k)
+      || /birinchi|ikkinchi|uchinchi|tortinchi|beshinchi|oltinchi|yettinchi|sakkizinchi|toqqizinchi/.test(k);
 }
 
 function isOlmosh(word) {
   const olmoshlar = ['u','biz','siz','men','sen','bizni','senga','nima','qaysi','harna','hu','shu','qayer','kimsa'];
-  if (olmoshlar.some(o => word.toLowerCase() === o)) return true;
+  if (olmoshlar.includes(word.toLowerCase())) return true;
   const found = findWord(word);
   return !!(found && found.entry.XPOS === 'P');
 }
 
 function isSifat(word) {
   const found = findWord(word);
-  return !!(found && found.entry['Belgining xususiyati'] && found.entry['Belgining xususiyati'] !== '—');
+  return !!(found && found.entry[COL_SIFAT_BELGI] && found.entry[COL_SIFAT_BELGI] !== '—');
 }
 
-/* ==================== KARTA ==================== */
-function buildCard(num, originalWord, found) {
+/* ==================== KARTA YARATISH ==================== */
+function buildCard(num, displayWord, found) {
   const card = document.createElement('div');
   card.className = 'word-card';
 
@@ -177,13 +242,13 @@ function buildCard(num, originalWord, found) {
     card.innerHTML = `
       <div class="word-card-header other">
         <span class="word-num">${num}.</span>
-        <span class="word-title">${originalWord}</span>
+        <span class="word-title">${displayWord}</span>
         <span class="badge other">❓ Topilmadi</span>
       </div>
       <div class="word-card-body">
         <table>
           <tr><th>ID</th><td>${num}</td></tr>
-          <tr><th>FORM</th><td>${originalWord}</td></tr>
+          <tr><th>FORM</th><td>${displayWord}</td></tr>
           <tr><th>LEMMA</th><td class="dim">—</td></tr>
           <tr><th>FEATS</th><td class="dim">—</td></tr>
           <tr><th>XPOS</th><td class="dim">—</td></tr>
@@ -199,38 +264,38 @@ function buildCard(num, originalWord, found) {
   const label = POS_LABEL[pos] || pos;
   const emoji = POS_EMOJI[pos] || '📝';
 
-  const rawFeats = (entry.FEATS && entry.FEATS !== '—' && entry.FEATS !== '∅')
+  /* FEATS */
+  const rawFeats = (entry.FEATS && entry.FEATS.trim() !== '—' && entry.FEATS.trim() !== '∅')
     ? entry.FEATS.trim() : '∅';
   let feats = rawFeats;
-  if (stemmed && suffix && rawFeats === '∅') feats = `+${suffix}`;
-  else if (stemmed && suffix && !rawFeats.includes(suffix)) feats = `${rawFeats} +${suffix}`;
+  if (stemmed && suffix) {
+    feats = rawFeats === '∅' ? `+${suffix}` : `${rawFeats} +${suffix}`;
+  }
 
-  const lemma = (entry.LEMMA && entry.LEMMA !== '—') ? entry.LEMMA : originalWord;
+  /* LEMMA */
+  const lemma = (entry.LEMMA && entry.LEMMA.trim() && entry.LEMMA.trim() !== '—')
+    ? entry.LEMMA.trim() : displayWord;
 
-  /* Asosiy 5 ta satr */
-  const BASE_KEYS = ['ID', 'FORM', 'LEMMA', 'FEATS', 'XPOS'];
+  /* Jadval satrlari */
+  const BASE_KEYS = new Set(['ID','FORM','LEMMA','FEATS','XPOS','posType','_source']);
   let tRows = '';
   tRows += `<tr><th>ID</th><td class="strong">${entry.ID || num}</td></tr>`;
-  tRows += `<tr><th>FORM</th><td class="strong">${entry.FORM || originalWord}</td></tr>`;
+  tRows += `<tr><th>FORM</th><td class="strong">${(entry.FORM || displayWord).trim()}</td></tr>`;
   tRows += `<tr><th>LEMMA</th><td class="strong">${lemma}</td></tr>`;
   tRows += `<tr><th>FEATS</th><td>${feats}</td></tr>`;
   tRows += `<tr><th>XPOS</th><td>${entry.XPOS || '—'}</td></tr>`;
 
-  /* Faqat shu POS ga xos ustunlar */
+  /* POS ga xos ustunlar */
   (POS_COLS[pos] || []).forEach(col => {
-    const v = (entry[col] && entry[col] !== '—') ? entry[col] : '—';
+    const v = (entry[col] && String(entry[col]).trim() !== '—' && String(entry[col]).trim() !== '')
+      ? entry[col] : '—';
     tRows += `<tr><th>${col}</th><td class="${v === '—' ? 'dim' : ''}">${v}</td></tr>`;
   });
 
-  /* ✅ Qolgan ustunlar — FAQAT BASE va POS_COLS da yo'q, va Column* emas,
-     va barcha POS_COLS (boshqa turlarniki ham) da yo'q ustunlar */
-  const skipCols = new Set([...BASE_KEYS, 'posType', ...ALL_POS_COLS]);
+  /* Qolgan ustunlar (Column*, posType, BASE ni o'tkazib) */
+  const skipCols = new Set([...BASE_KEYS, ...ALL_POS_COLS]);
   Object.keys(entry)
-    .filter(k => {
-      if (skipCols.has(k)) return false;
-      if (/^Column\d+$/i.test(k)) return false;   // Column13, Column14... o'tkazib yuborish
-      return true;
-    })
+    .filter(k => !skipCols.has(k) && !/^Column\d+$/i.test(k))
     .sort()
     .forEach(k => {
       const v = (entry[k] !== undefined && String(entry[k]).trim() !== '') ? entry[k] : '—';
@@ -240,7 +305,7 @@ function buildCard(num, originalWord, found) {
   card.innerHTML = `
     <div class="word-card-header" style="border-left:4px solid ${color};background:${color}15">
       <span class="word-num">${num}.</span>
-      <span class="word-title">${originalWord}</span>
+      <span class="word-title">${displayWord}</span>
       <div class="badges">
         ${suffix ? `<span class="badge stem">~o'zak (+${suffix})</span>` : ''}
         <span class="badge" style="background:${color}">${emoji} ${label}</span>
@@ -268,25 +333,25 @@ function analyze() {
   if (section) section.style.display = 'none';
   if (grid)    grid.innerHTML        = '';
 
-  const tokens = text.split(/\s+/).filter(w => w.length > 0);
+  const tokens  = text.split(/\s+/).filter(w => w.length > 0);
   const results = [];
   let i = 0;
 
   while (i < tokens.length) {
     let matched = false;
 
-    /* 1. DB da to'liq ibora */
+    /* 1. DB da to'liq ibora (4 so'zgacha) */
     for (let len = Math.min(4, tokens.length - i); len >= 2; len--) {
       const phrase    = tokens.slice(i, i + len).join(' ');
       const phraseKey = toKey(phrase);
-      if (DB[phraseKey]) {
-        results.push({ original: phrase, found: { entry: { ...DB[phraseKey] }, stemmed: false, suffix: '' } });
+      if (DB[phraseKey] && DB[phraseKey].XPOS) {
+        results.push({ display: phrase, found: { entry: { ...DB[phraseKey] }, stemmed: false, suffix: '' } });
         i += len; matched = true; break;
       }
     }
     if (matched) continue;
 
-    /* 2. Qo'shma son: Num + Num */
+    /* 2. Qo'shma son: Num + Num (max 6 token) */
     if (isNum(tokens[i])) {
       let numLen = 1;
       while (numLen < 6 && i + numLen < tokens.length && isNum(tokens[i + numLen])) numLen++;
@@ -296,52 +361,41 @@ function analyze() {
         const baseFound = findWord(tokens[i]);
         const lastFound = findWord(tokens[i + numLen - 1]);
 
-        /* FEATS: stemmed bo'lsa suffix ni ishlatamiz, aks holda entry.FEATS
-           Masalan: "yettita" -> stemmed=True, suffix="ta" -> FEATS="+ta"
-                    "sakkizta" -> stemmed=False, entry.FEATS="+ta" -> FEATS="+ta" */
+        /* FEATS: stemmed bo'lsa suffix, aks holda entry.FEATS */
         const lastFeats = lastFound
           ? (lastFound.stemmed && lastFound.suffix
               ? '+' + lastFound.suffix
               : (lastFound.entry.FEATS && lastFound.entry.FEATS !== '∅' && lastFound.entry.FEATS !== '—'
-                  ? lastFound.entry.FEATS.trim()
-                  : ''))
+                  ? lastFound.entry.FEATS.trim() : ''))
           : '';
 
-        /* LEMMA: barcha tokenlar uchun LEMMA larini birlashtir
-           Masalan: tokens=["ellik","uchinchi"] -> lemmas=["ellik","uch"] -> "ellik uch" */
+        /* LEMMA: barcha tokenlar LEMMA larini birlashtir */
         const allLemmas = tokens.slice(i, i + numLen).map((tok, idx) => {
           const fw = idx === 0 ? baseFound : (idx === numLen - 1 ? lastFound : findWord(tok));
           return fw ? (fw.entry.LEMMA || tok) : tok;
         });
-        const mergedLemma = allLemmas.join(' ');
 
-        /* Son ustunlarini - base yoki last - qaysi birida son dataset bo'lsa o'sha dan olamiz
-           Masalan: "ellik uchinchi" da ellik son dataset da, uchinchi sifat dataset da.
-           Shuning uchun faqat lastFound emas, ikkalasini tekshiramiz. */
+        /* Son ustunlarini — qaysi entry da bor bo'lsa o'shandan ol */
         const sonCols = [COL_SON_MANOV, "Hisob so'zlar", "Bir so'zining ma'nolari", "Tuzalishiga ko'ra"];
         const sonColValues = {};
-        const allEntries = [baseFound, lastFound].filter(Boolean).map(f => f.entry);
+        const allEntries   = [baseFound, lastFound].filter(Boolean).map(f => f.entry);
         sonCols.forEach(col => {
-          let found_val = '—';
-          for (const ent of allEntries) {
-            const v = ent[col];
-            if (v && v !== '—') { found_val = v; break; }
-          }
-          sonColValues[col] = found_val;
+          const v = allEntries.map(e => e[col]).find(v => v && v !== '—') || '—';
+          sonColValues[col] = v;
         });
 
+        const suf    = lastFeats ? lastFeats.replace(/^\+/, '').split('+')[0] : '';
         const merged = {
           ...(baseFound ? baseFound.entry : {}),
           FORM:    phrase,
-          LEMMA:   mergedLemma,
+          LEMMA:   allLemmas.join(' '),
           FEATS:   lastFeats || '∅',
           XPOS:    'Num',
           posType: 'son',
-          ...sonColValues,   /* son ustunlarini ustiga yozamiz */
+          ...sonColValues,
         };
 
-        const suf = lastFeats ? lastFeats.replace(/^\+/, '').split('+')[0] : '';
-        results.push({ original: phrase, found: { entry: merged, stemmed: !!suf, suffix: suf } });
+        results.push({ display: phrase, found: { entry: merged, stemmed: !!suf, suffix: suf } });
         i += numLen; matched = true;
       }
     }
@@ -361,14 +415,15 @@ function analyze() {
       }
     }
 
-    results.push({ original: single, found: found || null });
+    results.push({ display: single, found: found || null });
     i++;
   }
 
   setTimeout(() => {
     const stats = { ot: 0, fel: 0, sifat: 0, son: 0, ravish: 0, olmosh: 0, topilmadi: 0 };
+
     results.forEach((res, idx) => {
-      grid.appendChild(buildCard(idx + 1, res.original, res.found));
+      grid.appendChild(buildCard(idx + 1, res.display, res.found));
       if (res.found) {
         const p = res.found.entry.posType || 'ot';
         stats[p] = (stats[p] || 0) + 1;
@@ -381,10 +436,10 @@ function analyze() {
     if (statsEl) {
       statsEl.innerHTML = Object.keys(stats)
         .filter(k => stats[k] > 0)
-        .map(k => {
-          if (k === 'topilmadi') return `<span class="chip other">❓ Topilmadi: ${stats.topilmadi}</span>`;
-          return `<span class="chip ${k}">${POS_EMOJI[k] || '📝'} ${POS_LABEL[k] || k}: ${stats[k]}</span>`;
-        }).join('');
+        .map(k => k === 'topilmadi'
+          ? `<span class="chip other">❓ Topilmadi: ${stats.topilmadi}</span>`
+          : `<span class="chip ${k}">${POS_EMOJI[k] || '📝'} ${POS_LABEL[k] || k}: ${stats[k]}</span>`
+        ).join('');
     }
 
     if (section) { section.style.display = 'block'; section.scrollIntoView({ behavior: 'smooth' }); }
@@ -396,7 +451,7 @@ function analyze() {
   }, 200);
 }
 
-/* ==================== EXPORT ==================== */
+/* ==================== XLSX EXPORT ==================== */
 function exportXlsx() {
   const cards = document.querySelectorAll('.word-card');
   if (!cards.length) return toast('Avval tahlil qiling!', 'error');
@@ -421,8 +476,8 @@ function exportXlsx() {
 document.addEventListener('DOMContentLoaded', () => {
   loadDatabase();
   document.getElementById('analyzeBtn')?.addEventListener('click', analyze);
-  (document.getElementById('exportBtn') || document.getElementById('exportXlsxBtn'))?.addEventListener('click', exportXlsx);
-  document.getElementById('wordInput')?.addEventListener('keydown', e => {
-    if (e.ctrlKey && e.key === 'Enter') analyze();
-  });
+  (document.getElementById('exportBtn') || document.getElementById('exportXlsxBtn'))
+    ?.addEventListener('click', exportXlsx);
+  document.getElementById('wordInput')
+    ?.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') analyze(); });
 });
