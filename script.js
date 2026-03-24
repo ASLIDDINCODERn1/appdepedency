@@ -121,20 +121,37 @@ async function loadDatabase() {
   const POS_PRIORITY = { son: 4, olmosh: 3, sifat: 2, ravish: 2, fel: 1, ot: 0 };
 
   /* Har 3 faylni parallel yuklaymiz */
-  const fileNames = ['Son', 'Sifat', 'Olmoshvaravish'];
+  /* Har fayl uchun mumkin bo'lgan barcha nom variantlari
+     Vercel case-sensitive, shuning uchun ko'p variant sinash kerak */
+  const FILE_VARIANTS = {
+    'Son':            ['Son', 'son', 'SON'],
+    'Sifat':          ['Sifat', 'sifat', 'SIFAT'],
+    'OlmoshvaRavish': ['OlmoshvaRavish', 'Olmosh_va_Ravish', 'OlmoshVaRavish',
+                       'olmoshvaravish', 'Olmoshvaravish', 'olmosh_va_ravish'],
+  };
+  const fileNames = ['Son', 'Sifat', 'OlmoshvaRavish'];
   const basePaths = ['./data/', '/data/', './'];
 
   for (const fileName of fileNames) {
     let loaded = false;
-    for (const base of basePaths) {
-      try {
-        const res = await fetch(`${base}${fileName}.json`);
-        if (!res.ok) continue;
+    const nameVariants = FILE_VARIANTS[fileName] || [fileName];
 
-        const rawData = await res.json();
-        const config  = FILE_CONFIG[fileName];
-        const arr     = rawData[config.key] || rawData[fileName] || (Array.isArray(rawData) ? rawData : []);
-        let fileCount = 0;
+    for (const base of basePaths) {
+      if (loaded) break;
+      for (const variant of nameVariants) {
+        try {
+          const res = await fetch(`${base}${variant}.json`);
+          if (!res.ok) continue;
+
+          const rawData = await res.json();
+          const config  = FILE_CONFIG[fileName];
+          /* Fayl ichidagi key ham variant bo'lishi mumkin */
+          const arr = rawData[config.key]
+            || rawData[fileName]
+            || rawData[variant]
+            || rawData[variant.charAt(0).toUpperCase() + variant.slice(1)]
+            || (Array.isArray(rawData) ? rawData : Object.values(rawData)[0] || []);
+          let fileCount = 0;
 
         arr.forEach(item => {
           if (!item || !item.FORM || item.ID === 'ID') return;
@@ -160,11 +177,12 @@ async function loadDatabase() {
 
         totalCount += fileCount;
         loadedFiles++;
-        console.log(`✅ ${fileName}.json: ${fileCount} ta yozuv`);
-        loaded = true;
-        break;
-      } catch (e) {
-        console.warn(`${fileName}.json yuklashda xato:`, e);
+          console.log(`✅ ${variant}.json: ${fileCount} ta yozuv`);
+          loaded = true;
+          break;
+        } catch (e) {
+          /* silent — keyingi variant sinab ko'ramiz */
+        }
       }
     }
     if (!loaded) {
