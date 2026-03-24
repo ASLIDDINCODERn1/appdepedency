@@ -57,7 +57,7 @@ const FILE_VARIANTS = {
                      'olmoshvaravish','olmosh_va_ravish','Olmosh_va_Ravish'],
 };
 const FILE_DATASET_KEY = {
-  'Son':'Son', 'Sifat':'Sifat', 'OlmoshvaRavish':'OlmoshvaRavish'
+  'Son':'Son', 'Sifat':'Sifat', 'OlmoshvaRavish':'OlmoshvaRish'
 };
 
 /* Fayl uchun qaysi POS bo'lishi ehtimoli ko'proq */
@@ -106,24 +106,49 @@ function toast(msg, type='info') {
   setTimeout(()=>{el.classList.add('hide');setTimeout(()=>el.remove(),300);},3500);
 }
 
+/* ==================== VERB WHITELIST (FIX: keldim → fel) ==================== */
+const VERB_WHITELIST = new Set([
+  'kel', 'keldi', 'keldim', 'kelding', 'keldik', 'keldilar',
+  'bor', 'bordi', 'bordim', 'bording', 'bordik', 'bordilar',
+  'qil', 'qildi', 'qildim', 'qilding', 'qildik', 'qildilar',
+  'yoz', 'yozdi', 'yozdim', 'yozding', 'yozdik', 'yozdilar',
+  'o\'q', 'o\'qdi', 'o\'qdim', 'o\'qding', 'o\'qdik', 'o\'qdilar',
+  'yur', 'yurdi', 'yurdim', 'yurding', 'yurdik', 'yurdilar',
+  'tush', 'tushdi', 'tushdim', 'tushding', 'tushdik', 'tushdilar',
+  'ket', 'ketdi', 'ketdim', 'ketding', 'ketdik', 'ketdilar',
+  'yot', 'yotdi', 'yotdim', 'yotding', 'yotdik', 'yotdilar',
+  'tur', 'turdi', 'turdim', 'turing', 'turdik', 'turdilar'
+].map(w => toKey(w)));
+
 /* ==================== POS ANIQLASH ==================== */
 function detectPos(item, fileHint) {
   const xpos = item.XPOS || '';
 
-  /* 1. XPOS HER DOIM ustunlik qiladi — dataset nomi emas
-     VB=fel, V=fel, RR=ravish, P=olmosh, JJ=sifat, Num=son */
-  const fromXpos = XPOS_MAP[xpos];
+  /* 1. XPOS HER DOIM ustunlik qiladi */
+  const fromXpos = X_MAP[xpos];
   if (fromXpos) return fromXpos;
 
-  /* 2. XPOS yo'q yoki noma'lum bo'lsa — ustun qiymatidan */
+  /* 2. Special heuristic: -di/-dim/-ding endings + consonant lemma → likely fel */
+  const form = item.FORM || '';
+  const lemma = (item.LEMMA || form).trim();
+  if (form && /(?:di|dim|ding|dik|dilar|dingiz|dikmi|dimi)$/i.test(form)
+      && lemma && !/[aeiou]$/i.test(toKey(lemma))
+      && !/^(\d+|yaxshi|yoqimli|go'zal|chiroyli|qiziqarli|sog'lom|katta|kichik|yangi|eski|yengil|qattiq|sovuq|issiq|qora|oq|sariq|ko'k|qizil|yashil|sarg'ish)$/.test(toKey(lemma))) {
+    return 'fel';
+  }
+
+  /* 3. Ustun qiymatidan */
   if (COL_SIFAT_BELGI in item && !['—',''].includes(String(item[COL_SIFAT_BELGI]).trim())) return 'sifat';
   if (COL_SON_MANOV   in item && !['—',''].includes(String(item[COL_SON_MANOV]).trim()))   return 'son';
   if (COL_OLMOSH_GRUPLAR in item && !['—',''].includes(String(item[COL_OLMOSH_GRUPLAR]).trim())) return 'olmosh';
-  if (item['Column13']  && !['—',''].includes(String(item['Column13']).trim()))   return 'ravish';
+  if (item['Column13'] || item['column13'] || item['COLUMN13']) {
+    const c13 = item['Column13'] || item['column13'] || item['COLUMN13'];
+    if (!['—',''].includes(String(c13).trim())) return 'ravish';
+  }
 
-  /* 3. Fayl hint */
+  /* 4. Fayl hint */
   if (fileHint === 'olmosh') return 'olmosh';
-  if (fileHint === 'son')    return 'son';
+  if (fileHint === 'son')    return '';
   if (fileHint === 'sifat')  return 'sifat';
 
   return 'ot';
@@ -225,6 +250,23 @@ function findWord(raw) {
   const direct = findInDB(key, null);
   if (direct && direct.XPOS) return { entry: {...direct}, stemmed: false, suffix: '' };
 
+  /* Known verbs override (FIX: keldim → fel) */
+  if (!direct && VERB_WHITELIST.has(key)) {
+    return {
+      entry: {
+        posType: 'fel',
+        FORM: raw,
+        LEMMA: raw.replace(/(dim|ding|dik|dilar|di)$/, '') || raw,
+        FEATS: '∅',
+        XPOS: 'V',
+        ID: 'auto-verb',
+        _file: 'auto'
+      },
+      stemmed: false,
+      suffix: ''
+    };
+  }
+
   /* Suffix loop */
   for (const suf of [...SUFFIXES, ...SON_SUFFIXES]) {
     const sk = toKey(suf);
@@ -246,9 +288,7 @@ function findWord(raw) {
   return null;
 }
 
-/* Kontekst bo'yicha to'g'ri entry topish
-   Masalan: "a'lo" so'zi son faylida ham, sifat faylida ham bor
-   Sifat kontekstida sifat DB dan olish kerak */
+/* Kontekst bo'yicha to'g'ri entry topish */
 function findWordForContext(raw, expectedPos) {
   const key = toKey(raw);
   if (expectedPos && DBs[expectedPos]?.[key]) {
@@ -275,7 +315,11 @@ function isOlmosh(word) {
 
 function isSifat(word) {
   const found = findWord(word);
-  return !!(found && found.entry[COL_SIFAT_BELGI] && found.entry[COL_SIFAT_BELGI] !== '—');
+  if (!found) return false;
+  const val = found.entry[COL_SIFAT_BELGI];
+  return val && typeof val === 'string' && 
+         !['—','∅',''].includes(val.trim()) &&
+         !/^(fe'l|verb|kel|bor|qil)/i.test(val);
 }
 
 /* ==================== KARTA ==================== */
@@ -325,11 +369,44 @@ function buildCard(num, displayWord, found) {
   tRows += `<tr><th>FEATS</th><td>${feats}</td></tr>`;
   tRows += `<tr><th>XPOS</th><td>${entry.XPOS||'—'}</td></tr>`;
 
-  (POS_COLS[pos]||[]).forEach(col => {
-    const v = (entry[col] && String(entry[col]).trim() !== '—') ? entry[col] : '—';
-    /* Ravish uchun Column* kalitlarini o'qilishi oson nomga aylantirish */
-    const label = (pos === 'ravish' && COL_RAVISH_MAP[col]) ? COL_RAVISH_MAP[col] : col;
-    tRows += `<tr><th>${label}</th><td class="${v==='—'?'dim':''}">${v}</td></tr>`;
+  // === ROBUST RAVISH COLUMN RENDERING (FIX) ===
+  (POS_COLS[pos] || []).forEach(col => {
+    let val = '—';
+    let actualKey = null;
+
+    // Exact match
+    if (entry.hasOwnProperty(col)) {
+      actualKey = col;
+    } else {
+      // Case-insensitive match
+      const lcCol = col.toLowerCase();
+      for (const k of Object.keys(entry)) {
+        if (k.toLowerCase() === lcCol) {
+          actualKey = k;
+          break;
+        }
+      }
+      // For ravish: also try column13, COLUMN13, etc.
+      if (!actualKey && pos === 'ravish' && /^Column\d+$/i.test(col)) {
+        for (const k of Object.keys(entry)) {
+          if (/^column\d+$/i.test(k)) {
+            actualKey = k;
+            break;
+          }
+        }
+      }
+    }
+
+    if (actualKey) {
+      const rawVal = entry[actualKey];
+      val = (rawVal && String(rawVal).trim() !== '—') ? rawVal : '—';
+    }
+
+    const label = (pos === 'ravish' && COL_RAVISH_MAP[col]) 
+                  ? COL_RAVISH_MAP[col] 
+                  : col;
+
+    tRows += `<tr><th>${label}</th><td class="${val==='—'?'dim':''}">${val}</td></tr>`;
   });
 
   const skipCols = new Set([...BASE_KEYS, ...ALL_POS_COLS]);
