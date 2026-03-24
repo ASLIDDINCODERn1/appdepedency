@@ -121,7 +121,7 @@ async function loadDatabase() {
   const POS_PRIORITY = { son: 4, olmosh: 3, sifat: 2, ravish: 2, fel: 1, ot: 0 };
 
   /* Har 3 faylni parallel yuklaymiz */
-  const fileNames = ['Son', 'Sifat', 'OlmoshvaRavish'];
+  const fileNames = ['Son', 'Sifat', 'Olmoshvaravish'];
   const basePaths = ['./data/', '/data/', './'];
 
   for (const fileName of fileNames) {
