@@ -309,10 +309,22 @@ function buildCard(num, displayWord, found) {
   const label = POS_LABEL[pos] || pos;
   const emoji = POS_EMOJI[pos] || '📝';
 
+  /* ── FIX 1: FEATS dublikat oldini olish ──
+     rawFeats ichida suffix allaqachon bo'lsa, qayta qo'shmaymiz */
   const rawFeats = (entry.FEATS && !['—','∅'].includes(entry.FEATS.trim()))
     ? entry.FEATS.trim() : '∅';
   let feats = rawFeats;
-  if (stemmed && suffix) feats = rawFeats === '∅' ? `+${suffix}` : `${rawFeats} +${suffix}`;
+  if (stemmed && suffix) {
+    const suffixTag = `+${suffix}`;
+    /* rawFeats ichida bu suffix allaqachon bormi tekshiramiz */
+    if (rawFeats === '∅') {
+      feats = suffixTag;
+    } else if (!rawFeats.includes(suffixTag)) {
+      /* Faqat hali yo'q bo'lsa qo'shamiz */
+      feats = `${rawFeats} ${suffixTag}`;
+    }
+    /* Agar rawFeats da allaqachon +ta bo'lsa — feats o'zgarmaydi (dublikat bo'lmaydi) */
+  }
 
   const lemma = (entry.LEMMA && entry.LEMMA.trim() && entry.LEMMA.trim() !== '—')
     ? entry.LEMMA.trim() : displayWord;
@@ -328,13 +340,23 @@ function buildCard(num, displayWord, found) {
   (POS_COLS[pos]||[]).forEach(col => {
     const v = (entry[col] && String(entry[col]).trim() !== '—') ? entry[col] : '—';
     /* Ravish uchun Column* kalitlarini o'qilishi oson nomga aylantirish */
-    const label = (pos === 'ravish' && COL_RAVISH_MAP[col]) ? COL_RAVISH_MAP[col] : col;
-    tRows += `<tr><th>${label}</th><td class="${v==='—'?'dim':''}">${v}</td></tr>`;
+    const colLabel = (pos === 'ravish' && COL_RAVISH_MAP[col]) ? COL_RAVISH_MAP[col] : col;
+    tRows += `<tr><th>${colLabel}</th><td class="${v==='—'?'dim':''}">${v}</td></tr>`;
   });
+
+  /* ── FIX 2: Boshqa POS ustunlarini ko'rsatmaymiz ──
+     Son kartada olmosh ustunlari, olmosh kartada son ustunlari chiqmasin
+     Faqat shu POS ga tegishli bo'lmagan barcha POS_COLS ustunlarini ham skip qilamiz */
+  const otherPosCols = new Set();
+  for (const [p, cols] of Object.entries(POS_COLS)) {
+    if (p !== pos) {
+      cols.forEach(c => otherPosCols.add(c));
+    }
+  }
 
   const skipCols = new Set([...BASE_KEYS, ...ALL_POS_COLS]);
   Object.keys(entry)
-    .filter(k => !skipCols.has(k) && !/^Column\d+$/i.test(k))
+    .filter(k => !skipCols.has(k) && !/^Column\d+$/i.test(k) && !otherPosCols.has(k))
     .sort()
     .forEach(k => {
       const v = (entry[k] !== undefined && String(entry[k]).trim() !== '') ? entry[k] : '—';
