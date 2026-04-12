@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).parent / "data"
 
 # ─── Groq (faqat server muhiti orqali) ───
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "REMOVED")  # noqa
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")  # Set GROQ_API_KEY env var
 groq_client  = None
 if GROQ_API_KEY:
     try:
