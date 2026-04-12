@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="uz" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>O'zbek POS Tagger — Rule-Based + AI</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+<div class="bg-scene">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  <div class="orb orb-4"></div>
+</div>
+
+<div id="toastContainer"></div>
+
+<div class="theme-switch-wrapper">
+  <button class="theme-toggle-btn" id="themeToggle" title="Tungi/Kunduzgi rejim">
+    <span class="toggle-icon icon-sun">☀️</span>
+    <span class="toggle-icon icon-moon">🌙</span>
+  </button>
+</div>
+
+<div class="container">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="logo"><i class="fas fa-language"></i></div>
+    <h1>O'zbek POS Tagger</h1>
+    <p>Rule-Based · Dataset DB · Statistik Model · Groq AI</p>
+    <div class="status-bar glass" id="statusBar">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Backend tekshirilmoqda...</span>
+      <span class="sep">|</span>
+      <span id="dbText">DB: —</span>
+      <span class="sep">|</span>
+      <span id="statText">Stat: —</span>
+      <span class="sep">|</span>
+      <span id="groqText">Groq: —</span>
+    </div>
+  </header>
+
+  <!-- INPUT -->
+  <div class="main-card glass">
+    <label class="input-label">
+      <i class="fas fa-paragraph"></i> Gap yoki matn kiriting:
+    </label>
+    <div class="textarea-wrap">
+      <textarea id="textInput"
+        placeholder="Masalan: Men bugun katta bog'da tez yurdim va beshta olma yedim..."
+        rows="4"></textarea>
+    </div>
+
+    <!-- Example sentences -->
+    <div class="examples">
+      <span class="ex-label">Namuna:</span>
+      <button class="ex-btn" data-txt="Men bugun katta bog'da beshta olma yedim.">1</button>
+      <button class="ex-btn" data-txt="Hech kim hech nima demadi, hamma jim o'tirdi.">2</button>
+      <button class="ex-btn" data-txt="U juda tez yugurdi va o'ttizta nafar kishini ortda qoldirdi.">3</button>
+      <button class="ex-btn" data-txt="Bugun ertalab eng chiroyli qizil gullar sariq barglar orasida ko'rindi.">4</button>
+    </div>
+
+    <div class="input-actions">
+      <button class="btn-primary" id="analyzeBtn">
+        <i class="fas fa-search"></i>
+        <span id="btnText">Tahlil qilish</span>
+        <i class="fas fa-spinner fa-spin" id="btnSpinner" style="display:none"></i>
+      </button>
+      <button class="btn-outline" id="clearBtn">
+        <i class="fas fa-trash-alt"></i> Tozalash
+      </button>
+      <button class="btn-outline-info" id="rulesBtn">
+        <i class="fas fa-book"></i> Qoidalar
+      </button>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="resultsSection" style="display:none">
+
+    <!-- Stats -->
+    <div class="stats-row glass">
+      <div class="stat-chips" id="statChips"></div>
+      <div class="export-btns">
+        <button class="btn-excel" id="exportBtn">
+          <i class="fas fa-file-excel"></i> Excel (.xlsx)
+        </button>
+      </div>
+    </div>
+
+    <!-- Filter tabs -->
+    <div class="filter-tabs glass">
+      <button class="tab active" data-filter="all"><i class="fas fa-list"></i> Hammasi</button>
+      <button class="tab" data-filter="P"><i class="fas fa-user"></i> Olmosh</button>
+      <button class="tab" data-filter="ADV"><i class="fas fa-bolt"></i> Ravish</button>
+      <button class="tab" data-filter="ADJ"><i class="fas fa-palette"></i> Sifat</button>
+      <button class="tab" data-filter="NUM"><i class="fas fa-hashtag"></i> Son</button>
+      <button class="tab" data-filter="N"><i class="fas fa-font"></i> Ot</button>
+      <button class="tab" data-filter="V"><i class="fas fa-running"></i> Fe'l</button>
+      <button class="tab" data-filter="UNKNOWN"><i class="fas fa-question"></i> Tahminiy</button>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap glass">
+      <table class="pos-table" id="posTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Token</th>
+            <th>O'zak / Lemma</th>
+            <th>POS</th>
+            <th>Turkum</th>
+            <th>Tur / Daraja</th>
+            <th>Ishonch</th>
+            <th>Qoida</th>
+          </tr>
+        </thead>
+        <tbody id="posTableBody"></tbody>
+      </table>
+    </div>
+
+    <!-- DB Detail panel (on row click) -->
+    <div class="detail-panel glass" id="detailPanel" style="display:none">
+      <div class="detail-head">
+        <span id="detailTitle">Qo'shimcha ma'lumot</span>
+        <button class="detail-close" id="detailClose"><i class="fas fa-times"></i></button>
+      </div>
+      <div id="detailBody" class="detail-body"></div>
+    </div>
+
+  </div>
+
+  <!-- AI -->
+  <div class="ai-card glass" id="aiCard" style="display:none">
+    <div class="ai-header">
+      <i class="fas fa-robot"></i>
+      <h3>Groq AI Morfologik Tahlil</h3>
+      <span class="ai-badge">llama-3.1-8b-instant</span>
+    </div>
+    <div class="ai-input-row">
+      <input type="text" id="aiQuestion"
+             placeholder="Masalan: Bu gapdagi olmoshlarni tushuntiring..."
+             class="ai-input">
+      <button class="btn-ai" id="aiBtn">
+        <i class="fas fa-paper-plane"></i>
+        <span id="aiBtnText">So'rash</span>
+        <i class="fas fa-spinner fa-spin" id="aiSpinner" style="display:none"></i>
+      </button>
+    </div>
+    <div class="ai-response" id="aiResponse" style="display:none">
+      <div class="ai-answer" id="aiAnswer"></div>
+    </div>
+  </div>
+
+  <!-- RULES MODAL -->
+  <div class="modal-overlay" id="rulesModal" style="display:none">
+    <div class="modal glass">
+      <div class="modal-head">
+        <h3><i class="fas fa-book"></i> Lingvistik Qoidalar (PDF asosida)</h3>
+        <button class="modal-close" id="rulesClose"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body" id="rulesBody">
+        <p class="loading-msg"><i class="fas fa-spinner fa-spin"></i> Qoidalar yuklanmoqda...</p>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script src="script.js"></script>
+<script>
+  // Theme toggle
+  const html = document.documentElement;
+  if (localStorage.getItem('theme') === 'dark') html.setAttribute('data-theme','dark');
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const dark = html.getAttribute('data-theme') === 'dark';
+    html.setAttribute('data-theme', dark ? 'light' : 'dark');
+    localStorage.setItem('theme', dark ? 'light' : 'dark');
+  });
+</script>
+</body>
+</html>
