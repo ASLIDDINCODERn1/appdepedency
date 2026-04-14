@@ -3,7 +3,12 @@
    Rule + Dataset DB + Statistical Model + Groq AI
    ================================================================ */
 
-const API = "http://localhost:8000";
+// Vercel va local uchun avtomatik URL
+// Vercel da: /api/... (relative)
+// Local da: uvicorn api.index:app --reload --port 8000
+const API = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+  ? "http://localhost:8000"
+  : "";
 
 let ALL_TOKENS = [];
 
@@ -73,7 +78,10 @@ async function checkHealth() {
     if (h.groq) document.getElementById("aiCard").style.display = "block";
   } catch {
     dot.classList.add("offline");
-    text.textContent = "Backend: ulangan emas — python server.py ni ishga tushiring";
+    const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    text.textContent = isLocal
+      ? "Backend: ulangan emas — uvicorn api.index:app --reload --port 8000"
+      : "Backend: xato — Vercel deployment ni tekshiring";
   }
 }
 
@@ -265,22 +273,47 @@ function formatAI(text) {
 /* ── Export ── */
 async function exportExcel() {
   if (!ALL_TOKENS.length) { toast("Avval tahlil qiling!", "error"); return; }
+
+  // 1-usul: Server tomonida xlsx yaratish
   try {
     const res = await fetch(API + "/api/export", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({tokens: ALL_TOKENS, filename:"pos_natijalar"}),
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tokens: ALL_TOKENS, filename: "pos_natijalar"}),
     });
-    if (!res.ok) throw new Error("Export xatosi");
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement("a"), {href:url, download:"pos_natijalar.xlsx"});
-    a.click();
-    URL.revokeObjectURL(url);
-    toast("Excel fayl yuklandi!", "success");
-  } catch(e) {
-    toast("Export xatosi: " + e.message, "error");
+    if (res.ok) {
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement("a"), {href: url, download: "pos_natijalar.xlsx"});
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("Excel fayl yuklandi!", "success");
+      return;
+    }
+  } catch(_) {}
+
+  // 2-usul: SheetJS (CDN dan yuklangan bo'lsa) bilan client-side export
+  if (typeof XLSX !== "undefined") {
+    const rows = ALL_TOKENS.map((t, i) => ({
+      "#":           i + 1,
+      "Token":       t.token  || "",
+      "O'zak":       t.stem   || "",
+      "POS":         t.pos    || "",
+      "Turkum":      {"P":"Olmosh","ADV":"Ravish","ADJ":"Sifat","NUM":"Son","N":"Ot","V":"Fe'l","UNKNOWN":"Noma'lum"}[t.pos] || "",
+      "Tur":         t.subtype || "",
+      "Ishonch %":   Math.round((t.confidence || 0) * 100),
+      "Qoida":       t.rule   || "",
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = Object.keys(rows[0] || {}).map(() => ({wch: 18}));
+    XLSX.utils.book_append_sheet(wb, ws, "POS_Tahlil");
+    XLSX.writeFile(wb, "pos_natijalar.xlsx");
+    toast("Excel fayl saqlandi!", "success");
+    return;
   }
+
+  toast("Export ishlamadi — brauzer XLSX kutubxonasini yuklamadi", "error");
 }
 
 /* ── Rules Modal ── */
