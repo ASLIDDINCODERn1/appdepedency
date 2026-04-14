@@ -551,6 +551,57 @@ tagger = UzbekPOSTagger(engine, db)
 
 
 # ═══════════════════════════════════════════════════════
+# GROQ — stat_model so'zlarini qayta teglash
+# ═══════════════════════════════════════════════════════
+def groq_fill_unknowns(tokens: list) -> list:
+    """DB da topilmagan (stat_model) so'zlarni Groq bilan to'g'ri teglash."""
+    if not groq_client:
+        return tokens
+
+    idxs = [i for i, t in enumerate(tokens) if t.get("rule") == "stat_model"]
+    if not idxs:
+        return tokens
+
+    words = [tokens[i]["token"] for i in idxs]
+    prompt = (
+        "O'zbek tilida quyidagi so'zlarni morfologik teglang.\n"
+        "Faqat JSON array qaytaring (boshqa hech narsa yozma):\n"
+        '[{"token":"...","pos":"N|V|ADJ|ADV|NUM|P","stem":"...","subtype":"...","confidence":0.0-1.0}]\n'
+        "So'zlar: " + json.dumps(words, ensure_ascii=False)
+    )
+    try:
+        resp = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system",
+                 "content": "Sen O'zbek tili morfologiyasi ekspertisan. Faqat JSON array qaytargin."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=800,
+        )
+        raw = resp.choices[0].message.content.strip()
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        if m:
+            parsed = json.loads(m.group())
+            for idx, res in zip(idxs, parsed):
+                if isinstance(res, dict):
+                    pos = str(res.get("pos", "N"))
+                    tokens[idx].update({
+                        "pos":        pos,
+                        "pos_uz":     POS_UZ.get(pos, "Noma'lum"),
+                        "stem":       str(res.get("stem", tokens[idx]["stem"])),
+                        "subtype":    str(res.get("subtype", "")),
+                        "confidence": float(res.get("confidence", 0.75)),
+                        "rule":       "groq_ai",
+                    })
+    except Exception as e:
+        log.warning("Groq fill xatosi: " + str(e))
+
+    return tokens
+
+
+# ═══════════════════════════════════════════════════════
 # FASTAPI
 # ═══════════════════════════════════════════════════════
 app = FastAPI(title="O'zbek POS Tagger v3.0", version="3.0.0")
@@ -604,6 +655,7 @@ async def api_tag(req: TagRequest):
     if not req.text.strip():
         raise HTTPException(400, "Matn bo'sh")
     tokens = tagger.tag_sentence(req.text)
+    tokens = groq_fill_unknowns(tokens)   # DB da yo'q so'zlarni Groq teglaydi
     stats: Dict[str, int] = {}
     for t in tokens:
         stats[t["pos"]] = stats.get(t["pos"], 0) + 1

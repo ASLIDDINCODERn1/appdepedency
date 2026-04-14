@@ -34,7 +34,7 @@ const RULE_BADGE = {
   adj_orttirma:"Orttirma",adj_ozaytirma:"Ozaytirma",
   adj_exact:"Sifat",adv_exact:"Ravish",num_exact:"Son",
   num_hisob:"Hisob so'z",digit:"Raqam",
-  database:"DB",stat_model:"Stat",no_rule:"?",
+  database:"DB",stat_model:"Stat",groq_ai:"Groq AI",no_rule:"?",
 };
 
 /* ── Toast ── */
@@ -174,14 +174,14 @@ function renderTable(tokens) {
       "<td class='td-rule mono'>" + esc(ruleBadge) + (t.rule && t.rule.includes("+") ? " <span class='suf-tag'>+" + t.rule.split("+")[1] + "</span>" : "") + "</td>";
 
     if (hasDb) {
-      tr.addEventListener("click", () => showDetail(t, idx));
+      tr.addEventListener("click", () => showDetail(t));
     }
     tbody.appendChild(tr);
   });
 }
 
 /* ── Detail panel (DB ma'lumotlari) ── */
-function showDetail(t, idx) {
+function showDetail(t) {
   const panel = document.getElementById("detailPanel");
   const body  = document.getElementById("detailBody");
   const title = document.getElementById("detailTitle");
