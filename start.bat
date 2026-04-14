@@ -29,12 +29,12 @@ if exist "%~dp0.env" (
 )
 
 :: requirements o'rnatish
-echo  [1/3] Kerakli kutubxonalar tekshirilmoqda...
-pip install fastapi groq openpyxl python-multipart uvicorn --quiet
+echo  [1/2] Kerakli kutubxonalar tekshirilmoqda...
+pip install fastapi uvicorn groq openpyxl python-multipart --quiet
 echo  [OK]  Kutubxonalar tayyor
 
 :: Tarmoq IP manzilini topish
-echo  [2/3] Server ishga tushirilmoqda...
+echo  [2/2] Server ishga tushirilmoqda...
 echo.
 
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4" ^| findstr /v "127.0.0.1"') do (
@@ -50,13 +50,12 @@ echo  │                                           │
 echo  │  Lokal:   http://localhost:8000           │
 echo  │  Tarmoq:  http://%LOCAL_IP%:8000          │
 echo  │                                           │
-echo  │  index.html faylni brauzerda ham oching   │
 echo  │  (Ctrl+C — to'xtatish)                    │
 echo  └──────────────────────────────────────────┘
 echo.
 
-:: Server ishga tushirish (barcha qurilmalar ko'rishi uchun 0.0.0.0)
+:: Server ishga tushirish
 cd /d "%~dp0"
-python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 --reload
+python server.py
 
 pause
