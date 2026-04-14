@@ -20,7 +20,8 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).parent / "data"
+BASE_DIR = Path(__file__).parent
+DATA_DIR = BASE_DIR / "data"
 
 # ─── Groq (faqat server muhiti orqali) ───
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")  # Set GROQ_API_KEY env var
@@ -628,15 +629,15 @@ class ExportRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    return FileResponse("index.html")
+    return FileResponse(BASE_DIR / "index.html")
 
 @app.get("/style.css")
 async def style():
-    return FileResponse("style.css")
+    return FileResponse(BASE_DIR / "style.css")
 
 @app.get("/script.js")
 async def script():
-    return FileResponse("script.js")
+    return FileResponse(BASE_DIR / "script.js")
 
 
 @app.get("/health")
@@ -815,10 +816,11 @@ async def api_export(req: ExportRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    port = int(os.environ.get("PORT", 8000))
     groq_status = "ulandi" if groq_client else "yo'q (GROQ_API_KEY o'rnating)"
     log.info("=" * 58)
     log.info("O'zbek Rule-Based POS Tagger  v3.0")
     log.info("DB: " + str(len(db.db)) + " so'z | Stat: " + str(len(db.stat.suf_cnt)) + " naqsh | Groq: " + groq_status)
-    log.info("Server: http://localhost:8000")
+    log.info("Server: http://0.0.0.0:" + str(port))
     log.info("=" * 58)
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=False)
