@@ -489,6 +489,10 @@ def rules():
 
 
 # ─────────────────────────────────────────────────────────────────
-# VERCEL HANDLER  (shu qator muhim — Vercel shu o'zgaruvchini qidiradi)
+# VERCEL HANDLER  (Mangum — FastAPI ASGI → AWS Lambda bridge)
 # ─────────────────────────────────────────────────────────────────
-handler = app
+try:
+    from mangum import Mangum
+    handler = Mangum(app, lifespan="off")
+except ImportError:
+    handler = app
