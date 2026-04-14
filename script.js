@@ -75,7 +75,6 @@ async function checkHealth() {
     dbEl.textContent  = "DB: " + h.db_words + " so'z";
     statEl.textContent = "Stat: " + (h.stat_sufs || 0) + " naqsh";
     groqEl.textContent = "Groq: " + (h.groq ? "ulandi" : "yo'q");
-    if (h.groq) document.getElementById("aiCard").style.display = "block";
   } catch {
     dot.classList.add("offline");
     const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
@@ -380,7 +379,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("textInput").value = "";
     document.getElementById("resultsSection").style.display = "none";
     document.getElementById("detailPanel").style.display    = "none";
-    document.getElementById("aiResponse").style.display     = "none";
     ALL_TOKENS = [];
   });
 
@@ -414,12 +412,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Export
   document.getElementById("exportBtn").addEventListener("click", exportExcel);
-
-  // AI
-  document.getElementById("aiBtn").addEventListener("click", aiAnalyze);
-  document.getElementById("aiQuestion").addEventListener("keydown", e => {
-    if (e.key === "Enter") aiAnalyze();
-  });
 
   // Ctrl+Enter
   document.getElementById("textInput").addEventListener("keydown", e => {
