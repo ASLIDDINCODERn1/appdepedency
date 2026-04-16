@@ -208,19 +208,23 @@ class UzbekRuleEngine:
 
         # ── SIFAT ──
         if pv in self.ORTTIRMA and w in self.ALL_ADJ:
-            return self._r(raw, w, "ADJ", "Sifat", "orttirma daraja", 1.0, "adj_orttirma")
+            cats = self._adj_categories(w, pv)
+            return self._r(raw, w, "ADJ", "Sifat", "orttirma daraja", 1.0, "adj_orttirma", {"adj_cats": cats})
         if pv in self.OZAYTIRMA and w in self.ALL_ADJ:
-            return self._r(raw, w, "ADJ", "Sifat", "ozaytirma daraja", 1.0, "adj_ozaytirma")
+            cats = self._adj_categories(w, pv)
+            return self._r(raw, w, "ADJ", "Sifat", "ozaytirma daraja", 1.0, "adj_ozaytirma", {"adj_cats": cats})
         if w in self.ALL_ADJ:
-            return self._r(raw, w, "ADJ", "Sifat", self._adj_sub(w), 1.0, "adj_exact")
+            cats = self._adj_categories(w, pv)
+            return self._r(raw, w, "ADJ", "Sifat", self._adj_sub(w), 1.0, "adj_exact", {"adj_cats": cats})
         for suf in self.ADJ_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 2:
-                sub = {"roq":"qiyosiy daraja (-roq)","dagi":"makon-zamon (-dagi)",
-                       "gi":"makon-zamon (-gi)","qi":"makon-zamon (-qi)",
+                sub = {"roq":"qiyosiy daraja (-roq)","dagi":"o'rin-payt (-dagi)",
+                       "gi":"o'rin-payt (-gi)","qi":"o'rin-payt (-qi)",
                        "li":"xususiyat (-li)","lik":"xususiyat (-lik)",
                        "simon":"o'xshashlik (-simon)","dor":"egalik (-dor)",
                        "chan":"moyillik (-chan)","siz":"yo'qlik (-siz)"}.get(suf, "sifat (-" + suf + ")")
-                return self._r(raw, w[:-len(suf)], "ADJ", "Sifat", sub, 0.80, "adj+" + suf)
+                cats = self._adj_categories(w[:-len(suf)], pv, suf)
+                return self._r(raw, w[:-len(suf)], "ADJ", "Sifat", sub, 0.80, "adj+" + suf, {"adj_cats": cats})
 
         # ── RAVISH ──
         if w in self.ALL_ADV:
@@ -232,9 +236,65 @@ class UzbekRuleEngine:
 
         return self._r(raw, w, "UNKNOWN", "Noma'lum", "", 0.0, "no_rule")
 
-    def _r(self, token, stem, pos, pos_uz, subtype, conf, rule):
-        return {"token": token, "stem": stem, "pos": pos, "pos_uz": pos_uz,
-                "subtype": subtype, "confidence": conf, "rule": rule}
+    def _r(self, token, stem, pos, pos_uz, subtype, conf, rule, extra=None):
+        d = {"token": token, "stem": stem, "pos": pos, "pos_uz": pos_uz,
+             "subtype": subtype, "confidence": conf, "rule": rule}
+        if extra:
+            d.update(extra)
+        return d
+
+    def _adj_categories(self, w, pv="", suf=""):
+        """Sifatning 5 ta lingvistik kategoriyasini qaytaradi."""
+        # 1. Belgining xususiyati
+        if w in self.RANG_TUS:          bel = "rang-tus"
+        elif w in self.MAZA_TAM:        bel = "maza-ta'm"
+        elif w in self.HAJM:            bel = "hajm va o'lcham"
+        elif w in self.HID:             bel = "hid"
+        elif w in self.XUSUSIYAT:       bel = "xarakter-xususiyat"
+        elif suf in ("li", "lik"):      bel = "xususiyat (-" + suf + ")"
+        elif suf in ("dor", "mand"):    bel = "egalik (-" + suf + ")"
+        elif suf == "siz":              bel = "yo'qlik (-siz)"
+        elif suf == "simon":            bel = "o'xshashlik (-simon)"
+        elif suf == "chan":             bel = "moyillik (-chan)"
+        elif suf in ("dagi","gi","qi"): bel = "o'rin-payt (-" + suf + ")"
+        else:                           bel = "umumiy belgi"
+
+        # 2. Daraja
+        if pv in self.ORTTIRMA:         daraja = "orttirma daraja"
+        elif pv in self.OZAYTIRMA:      daraja = "ozaytirma daraja"
+        elif suf == "roq":              daraja = "qiyosiy daraja (-roq)"
+        else:                           daraja = "oddiy daraja"
+
+        # 3. Tuzilishi
+        parts = w.split("-")
+        if len(parts) == 2 and parts[0] == parts[1]: tuzilish = "juft (takroriy)"
+        elif "-" in w:                               tuzilish = "qo'shma sifat"
+        elif suf:                                    tuzilish = "qo'shimchali (yasama)"
+        else:                                        tuzilish = "sodda sifat"
+
+        # 4. Yasalishi
+        YASAMA = {"li","lik","dor","chan","siz","simon","mand","roq","gi","dagi","qi"}
+        if suf in YASAMA:   yasalish = "yasama (-" + suf + ")"
+        elif w in self.ALL_ADJ: yasalish = "asl sifat"
+        else:               yasalish = "yasama sifat"
+
+        # 5. Sifatning LGM
+        if w in self.RANG_TUS:              lgm = "rang-tus bildiruvchi"
+        elif w in self.MAZA_TAM:            lgm = "maza-ta'm bildiruvchi"
+        elif w in self.HAJM:                lgm = "hajm-o'lcham bildiruvchi"
+        elif w in self.HID:                 lgm = "hid bildiruvchi"
+        elif suf in ("dagi","gi","qi"):     lgm = "o'rin-payt munosabatli"
+        elif suf == "roq":                  lgm = "qiyosiy ma'noli"
+        elif suf in ("siz","li","lik"):     lgm = "munosabat bildiruvchi"
+        else:                               lgm = "xarakter-xususiyat bildiruvchi"
+
+        return {
+            "Belgining xususiyati": bel,
+            "Daraja":               daraja,
+            "Tuzilishi":            tuzilish,
+            "Yasalishi":            yasalish,
+            "Sifatning LGM":        lgm,
+        }
 
     def _pron_sub(self, st):
         if st in self.KISHILIK:      return "kishilik olmoshi"

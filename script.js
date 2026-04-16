@@ -61,28 +61,6 @@ async function apiFetch(path, method, body) {
   return res.json();
 }
 
-/* ── Health check ── */
-async function checkHealth() {
-  const dot    = document.getElementById("statusDot");
-  const text   = document.getElementById("statusText");
-  const dbEl   = document.getElementById("dbText");
-  const statEl = document.getElementById("statText");
-  const groqEl = document.getElementById("groqText");
-  try {
-    const h = await apiFetch("/health");
-    dot.classList.add("online");
-    text.textContent  = "Backend: ishlayapti";
-    dbEl.textContent  = "DB: " + h.db_words + " so'z";
-    statEl.textContent = "Stat: " + (h.stat_sufs || 0) + " naqsh";
-    groqEl.textContent = "Groq: " + (h.groq ? "ulandi" : "yo'q");
-  } catch {
-    dot.classList.add("offline");
-    const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-    text.textContent = isLocal
-      ? "Backend: ulangan emas — uvicorn api.index:app --reload --port 8000"
-      : "Backend: xato — Vercel deployment ni tekshiring";
-  }
-}
 
 /* ── Analyze ── */
 async function analyze() {
@@ -194,9 +172,25 @@ function showDetail(t) {
   rows += "<tr><th>FORM</th><td>" + esc(t.token) + "</td></tr>";
   rows += "<tr><th>O'zak (LEMMA)</th><td>" + esc(t.stem || "—") + "</td></tr>";
   rows += "<tr><th>POS</th><td>" + esc(t.pos) + " — " + esc(POS_LABEL[t.pos] || "") + "</td></tr>";
-  rows += "<tr><th>Tur</th><td>" + esc(t.subtype || "—") + "</td></tr>";
-  rows += "<tr><th>Qoida</th><td>" + esc(t.rule || "—") + "</td></tr>";
+  rows += "<tr><th>Tur / Daraja</th><td>" + esc(t.subtype || "—") + "</td></tr>";
   rows += "<tr><th>Ishonch</th><td>" + Math.round((t.confidence || 0) * 100) + "%</td></tr>";
+  rows += "<tr><th>Qoida</th><td>" + esc(t.rule || "—") + "</td></tr>";
+
+  // Sifat uchun 5 ta lingvistik kategoriya
+  if (t.pos === "ADJ" && t.adj_cats) {
+    rows += "<tr><td colspan='2' style='padding:6px 8px;font-weight:600;color:#d97706;background:#fef3c720;border-top:2px solid #d9770640'>"
+          + "🔶 Sifat lingvistik tahlili</td></tr>";
+    const icons = {
+      "Belgining xususiyati": "🏷️",
+      "Daraja":               "📊",
+      "Tuzilishi":            "🧱",
+      "Yasalishi":            "⚙️",
+      "Sifatning LGM":        "📖",
+    };
+    for (const [k, v] of Object.entries(t.adj_cats)) {
+      rows += "<tr><th>" + (icons[k] || "") + " " + esc(k) + "</th><td><strong>" + esc(v) + "</strong></td></tr>";
+    }
+  }
 
   if (t.db) {
     for (const [k, v] of Object.entries(t.db)) {
@@ -371,8 +365,6 @@ function esc(s) {
 
 /* ── INIT ── */
 document.addEventListener("DOMContentLoaded", () => {
-  checkHealth();
-
   document.getElementById("analyzeBtn").addEventListener("click", analyze);
 
   document.getElementById("clearBtn").addEventListener("click", () => {
