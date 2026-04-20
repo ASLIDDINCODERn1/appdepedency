@@ -131,13 +131,16 @@ function renderTable(tokens) {
     const confCls   = conf >= 90 ? "conf-high" : conf >= 70 ? "conf-mid" : "conf-low";
     const isStatRow = t.rule === "stat_model";
     const hasDb     = t.db && Object.keys(t.db).length > 0;
+    const hasCats   = t.cats && Object.keys(t.cats).length > 0;
+    const hasAdjOld = t.adj_cats && Object.keys(t.adj_cats).length > 0;
+    const clickable = hasDb || hasCats || hasAdjOld;
 
     const tr = document.createElement("tr");
     tr.setAttribute("data-pos",   pos);
     tr.setAttribute("data-idx",   idx);
     tr.setAttribute("data-stat",  isStatRow ? "1" : "0");
-    if (isStatRow) tr.classList.add("stat-row");
-    if (hasDb)     tr.style.cursor = "pointer";
+    if (isStatRow)  tr.classList.add("stat-row");
+    if (clickable)  tr.style.cursor = "pointer";
 
     tr.innerHTML =
       "<td class='td-num'>" + (idx + 1) + "</td>" +
@@ -151,7 +154,7 @@ function renderTable(tokens) {
       "<td><span class='conf " + confCls + "'>" + conf + "%</span></td>" +
       "<td class='td-rule mono'>" + esc(ruleBadge) + (t.rule && t.rule.includes("+") ? " <span class='suf-tag'>+" + t.rule.split("+")[1] + "</span>" : "") + "</td>";
 
-    if (hasDb) {
+    if (clickable) {
       tr.addEventListener("click", () => showDetail(t));
     }
     tbody.appendChild(tr);
@@ -176,18 +179,40 @@ function showDetail(t) {
   rows += "<tr><th>Ishonch</th><td>" + Math.round((t.confidence || 0) * 100) + "%</td></tr>";
   rows += "<tr><th>Qoida</th><td>" + esc(t.rule || "—") + "</td></tr>";
 
-  // Sifat uchun 5 ta lingvistik kategoriya
-  if (t.pos === "ADJ" && t.adj_cats) {
-    rows += "<tr><td colspan='2' style='padding:6px 8px;font-weight:600;color:#d97706;background:#fef3c720;border-top:2px solid #d9770640'>"
-          + "🔶 Sifat lingvistik tahlili</td></tr>";
-    const icons = {
-      "Belgining xususiyati": "🏷️",
-      "Daraja":               "📊",
-      "Tuzilishi":            "🧱",
-      "Yasalishi":            "⚙️",
-      "Sifatning LGM":        "📖",
+  // Lingvistik kategoriyalar (Olmosh/Ravish/Sifat/Son/Fe'l)
+  const catsObj = t.cats || t.adj_cats;
+  if (catsObj && Object.keys(catsObj).length) {
+    const headerMap = {
+      "P":   { color: "#059669", label: "🟢 Olmosh lingvistik tahlili"  },
+      "ADV": { color: "#2563eb", label: "🔵 Ravish lingvistik tahlili"  },
+      "ADJ": { color: "#d97706", label: "🟠 Sifat lingvistik tahlili"   },
+      "NUM": { color: "#7c3aed", label: "🟣 Son lingvistik tahlili"     },
+      "V":   { color: "#db2777", label: "🌸 Fe'l lingvistik tahlili"    },
     };
-    for (const [k, v] of Object.entries(t.adj_cats)) {
+    const h = headerMap[t.pos] || { color: "#64748b", label: "Lingvistik tahlil" };
+    rows += "<tr><td colspan='2' style='padding:6px 8px;font-weight:600;color:" +
+            h.color + ";background:" + h.color + "14;border-top:2px solid " + h.color + "40'>" +
+            h.label + "</td></tr>";
+    const icons = {
+      // umumiy
+      "Ma'noviy guruhi":     "🏷️",
+      "Belgining xususiyati":"🏷️",
+      "Tuzilishi":           "🧱",
+      "Yasalishi":           "⚙️",
+      "Daraja":              "📊",
+      "Shaxs-son":           "👥",
+      "Kelishik":            "🔗",
+      "Shakli":              "🔢",
+      "Zamon":               "🕒",
+      "Mayl":                "🎯",
+      "Bo'lishli":           "±",
+      // LGM-lar
+      "Sifatning LGM":       "📖",
+      "Ravishning LGM":      "📖",
+      "Sonning LGM":         "📖",
+    };
+    for (const [k, v] of Object.entries(catsObj)) {
+      if (!v || v === "—") continue;
       rows += "<tr><th>" + (icons[k] || "") + " " + esc(k) + "</th><td><strong>" + esc(v) + "</strong></td></tr>";
     }
   }

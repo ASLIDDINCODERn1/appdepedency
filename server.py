@@ -92,6 +92,16 @@ class UzbekRuleEngine:
                           "jo'rttaga","azza-bazza","noiloj","noilojlikdan",
                           "ilojsizlikdan","majburlikdan","albatta","shubhasiz"})
     ALL_ADV  = frozenset().union(HOLAT_R, PAYT_R, ORIN_R, MIQDOR_R, MAQSAD_R)
+    # Qo'shma ravishlar (2 tokenli birikmalar)
+    ALL_ADV_B = frozenset({
+        "bir oz","bir pas","bir lahza","bir zum","bir zumda",
+        "har doim","har kuni","har gal","har zamon","har yili","har oy",
+        "har safar","har vaqt","har soat","har dam",
+        "bir marta","ikki marta","uch marta","necha marta",
+        "tez-tez","ora-sira","o'sha zahoti","darhol shu onda",
+        "o'tgan kuni","o'tgan yili","kelgan yili",
+        "zudlik bilan","birga-birga","qo'l-qo'lda",
+    })
     ADV_SUF  = sorted(["chasiga","larcha","layin","namo","ona",
                        "cha","lab","dek","day","lay","siz",
                        "an","in","iga","siga"], key=len, reverse=True)
@@ -137,6 +147,83 @@ class UzbekRuleEngine:
         "taqsim":    ["tadan"],
     }
 
+    # ── Fe'l qo'shimchalari (aniq fe'l alomatlari) ──
+    VERB_STRONG_SUF = sorted([
+        # Infinitiv / niyat
+        "moqchiman","moqchisan","moqchimiz","moqchisiz","moqchi","moqda","moq",
+        # Hozirgi davom (-yap-)
+        "yapman","yapsan","yapmiz","yapsiz","yapti","yap",
+        # Hozirgi davom (-yotir, -yotib-)
+        "yotibman","yotibsan","yotibdi","yotibmiz","yotibsiz","yotir",
+        "yotgan","ayotgan",
+        # Sifatdosh (-gan + shaxs-son)
+        "ganman","gansan","ganmiz","gansiz","ganlar",
+        # Ravishdosh / sifatdosh
+        "ibman","ibsan","ibmiz","ibsiz","ibdi",
+        # Kelasi zamon
+        "ajakman","ajaksan","ajakmiz","ajaksiz","ajak",
+    ], key=len, reverse=True)
+
+    VERB_PROB_SUF = sorted([
+        # O'tgan zamon (aniq)
+        "magansiz","magandim","magandik","magandi","magan",
+        "madingiz","madilar","madim","mading","madik","madi",
+        "dingiz","dilar","dik","dim","ding","di",
+        # Hozirgi-kelasi (aorist)
+        "adilar","amiz","asiz","aman","asan","adi",
+        "yamiz","yasiz","yaman","yasan","ydi",
+        # Shart mayli
+        "sangiz","salar","sam","sang","sak","sa",
+        # Buyruq
+        "sinlar","sin","gin",
+        # Ravishdosh
+        "ib","gach","guncha",
+    ], key=len, reverse=True)
+
+    # Fe'l uchun umumiy o'zaklar (yasama bo'lmaydigan ildizlar uchun filtr)
+    VERB_ROOT_HINT = frozenset({
+        "bor","kel","ket","yur","tur","yot","o'tir","ol","ber","qil","et",
+        "o'qi","yoz","ayt","de","bo'l","ish","ko'r","eshit","top","yo'qot",
+        "ye","ich","uxla","uyg'o","chiq","kir","qayt","boshla","tugat",
+        "bajar","yig'","tarqat","o'yna","yasha","kul","yig'la","o'yla",
+        "ishla","qara","yugur","sotib","sot","yur","ilg'a","uch","qo'y",
+        "yub","yubor","yoz","yozil","yasal","kuyla","tingla","tuz","tutib",
+        "tut","o'gir","burab","bura","uchir","hayda","tag'in","bos","urin",
+        "ur","yirtma","keltirib","keltir","olib","olmoq","aylan","yoriq",
+    })
+
+    # Ular fe'l emas (bu ildizlar bilan tugasa ham qat'iy rad etiladi)
+    NON_VERB_ROOTS = frozenset()  # keyinchalik kengaytirish mumkin
+
+    def _is_verb(self, w: str):
+        """Fe'l alomatlarini aniqlaydi. (stem, suf, kind) qaytaradi yoki None."""
+        if not w:
+            return None
+        # Avvalambor — rule-based so'z turlarida bo'lsa, fe'l emas (odatda).
+        if w in self.ALL_ADJ or w in self.ALL_ADV or w in self.ALL_PRON \
+           or w in self.ALL_NUM or w in self.HISOB or w in self.ORTTIRMA \
+           or w in self.OZAYTIRMA:
+            return None
+
+        # 1) Strong suffiks — aniq fe'l
+        for suf in self.VERB_STRONG_SUF:
+            if w.endswith(suf) and len(w) > len(suf) + 1:
+                stem = w[:-len(suf)]
+                if len(stem) >= 2:
+                    return stem, suf, "strong"
+
+        # 2) Probable suffiks — ildiz tekshiruvi bilan
+        for suf in self.VERB_PROB_SUF:
+            if w.endswith(suf) and len(w) > len(suf) + 1:
+                stem = w[:-len(suf)]
+                if 2 <= len(stem) <= 7:
+                    # Ildiz boshqa turkumga kirib qolmasin
+                    if stem in self.ALL_ADJ or stem in self.ALL_ADV \
+                       or stem in self.ALL_PRON or stem in self.ALL_NUM:
+                        continue
+                    return stem, suf, "prob"
+        return None
+
     # ── Normalizatsiya ──
     # Apostrofni saqlaymiz chunki u o'zbek so'zlarining bir qismi (o'n, o'z, to'rt...)
     def norm(self, w: str) -> str:
@@ -179,43 +266,64 @@ class UzbekRuleEngine:
 
         # ── OLMOSH ──
         if w in self.KISHILIK:
-            return self._r(raw, w, "P", "Olmosh", "kishilik olmoshi", 1.0, "pron_kishilik")
+            cats = self._pron_categories(w, "")
+            return self._r(raw, w, "P", "Olmosh", "kishilik olmoshi", 1.0, "pron_kishilik", {"cats": cats})
         if w in self.KORSATISH and w not in self.KISHILIK:
-            return self._r(raw, w, "P", "Olmosh", "ko'rsatish olmoshi", 1.0, "pron_korsatish")
+            cats = self._pron_categories(w, "")
+            return self._r(raw, w, "P", "Olmosh", "ko'rsatish olmoshi", 1.0, "pron_korsatish", {"cats": cats})
         if w in self.SOROQ:
-            return self._r(raw, w, "P", "Olmosh", "so'roq olmoshi", 1.0, "pron_soroq")
+            cats = self._pron_categories(w, "")
+            return self._r(raw, w, "P", "Olmosh", "so'roq olmoshi", 1.0, "pron_soroq", {"cats": cats})
         if w in self.BELGILASH:
-            return self._r(raw, w, "P", "Olmosh", "belgilash olmoshi", 1.0, "pron_belgilash")
+            cats = self._pron_categories(w, "")
+            return self._r(raw, w, "P", "Olmosh", "belgilash olmoshi", 1.0, "pron_belgilash", {"cats": cats})
         if w in self.BOLISHSIZLIK:
-            return self._r(raw, w, "P", "Olmosh", "bo'lishsizlik olmoshi", 1.0, "pron_bolishsizlik")
+            cats = self._pron_categories(w, "")
+            return self._r(raw, w, "P", "Olmosh", "bo'lishsizlik olmoshi", 1.0, "pron_bolishsizlik", {"cats": cats})
         if w in self.OZLIK:
-            return self._r(raw, w, "P", "Olmosh", "o'zlik olmoshi", 1.0, "pron_ozlik")
+            cats = self._pron_categories(w, "")
+            return self._r(raw, w, "P", "Olmosh", "o'zlik olmoshi", 1.0, "pron_ozlik", {"cats": cats})
         if w in self.GUMON:
-            return self._r(raw, w, "P", "Olmosh", "gumon olmoshi", 1.0, "pron_gumon")
+            cats = self._pron_categories(w, "")
+            return self._r(raw, w, "P", "Olmosh", "gumon olmoshi", 1.0, "pron_gumon", {"cats": cats})
 
         st, sf = self._pron_stem(w)
         if st:
-            return self._r(raw, st, "P", "Olmosh", self._pron_sub(st), 0.95, "pron+" + sf)
+            cats = self._pron_categories(st, sf)
+            return self._r(raw, st, "P", "Olmosh", self._pron_sub(st), 0.95, "pron+" + sf, {"cats": cats})
 
         # ── SON ──
         if w in self.ALL_NUM:
-            return self._r(raw, w, "NUM", "Son", "sodda son", 1.0, "num_exact")
+            cats = self._num_categories(w, "", False, False)
+            return self._r(raw, w, "NUM", "Son", "sodda son", 1.0, "num_exact", {"cats": cats})
         if pv in self.ALL_NUM and w in self.HISOB:
-            return self._r(raw, w, "NUM", "Son", "hisob so'z", 0.92, "num_hisob")
+            cats = self._num_categories(w, "dona", False, False)
+            return self._r(raw, w, "NUM", "Son", "hisob so'z", 0.92, "num_hisob", {"cats": cats})
         stn, nt = self._num_stem(w)
         if stn:
-            return self._r(raw, stn, "NUM", "Son", nt + " son", 0.95, "num+" + nt)
+            cats = self._num_categories(stn, nt, False, False)
+            return self._r(raw, stn, "NUM", "Son", nt + " son", 0.95, "num+" + nt, {"cats": cats})
+
+        # ── FE'L ── (sifat/ravishdan oldin! aks holda "yugurdi" → ravish bo'p qoladi)
+        vb = self._is_verb(w)
+        if vb:
+            stem, vsuf, kind = vb
+            cats = self._verb_categories(stem, vsuf)
+            conf = 0.95 if kind == "strong" else 0.82
+            return self._r(raw, stem, "V", "Fe'l",
+                           cats.get("Zamon", "") + " · " + cats.get("Mayl", ""),
+                           conf, "verb+" + vsuf, {"cats": cats})
 
         # ── SIFAT ──
         if pv in self.ORTTIRMA and w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
-            return self._r(raw, w, "ADJ", "Sifat", "orttirma daraja", 1.0, "adj_orttirma", {"adj_cats": cats})
+            return self._r(raw, w, "ADJ", "Sifat", "orttirma daraja", 1.0, "adj_orttirma", {"cats": cats, "adj_cats": cats})
         if pv in self.OZAYTIRMA and w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
-            return self._r(raw, w, "ADJ", "Sifat", "ozaytirma daraja", 1.0, "adj_ozaytirma", {"adj_cats": cats})
+            return self._r(raw, w, "ADJ", "Sifat", "ozaytirma daraja", 1.0, "adj_ozaytirma", {"cats": cats, "adj_cats": cats})
         if w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
-            return self._r(raw, w, "ADJ", "Sifat", self._adj_sub(w), 1.0, "adj_exact", {"adj_cats": cats})
+            return self._r(raw, w, "ADJ", "Sifat", self._adj_sub(w), 1.0, "adj_exact", {"cats": cats, "adj_cats": cats})
         for suf in self.ADJ_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 2:
                 sub = {"roq":"qiyosiy daraja (-roq)","dagi":"o'rin-payt (-dagi)",
@@ -224,15 +332,17 @@ class UzbekRuleEngine:
                        "simon":"o'xshashlik (-simon)","dor":"egalik (-dor)",
                        "chan":"moyillik (-chan)","siz":"yo'qlik (-siz)"}.get(suf, "sifat (-" + suf + ")")
                 cats = self._adj_categories(w[:-len(suf)], pv, suf)
-                return self._r(raw, w[:-len(suf)], "ADJ", "Sifat", sub, 0.80, "adj+" + suf, {"adj_cats": cats})
+                return self._r(raw, w[:-len(suf)], "ADJ", "Sifat", sub, 0.80, "adj+" + suf, {"cats": cats, "adj_cats": cats})
 
         # ── RAVISH ──
         if w in self.ALL_ADV:
-            return self._r(raw, w, "ADV", "Ravish", self._adv_sub(w), 1.0, "adv_exact")
+            cats = self._adv_categories(w, "")
+            return self._r(raw, w, "ADV", "Ravish", self._adv_sub(w), 1.0, "adv_exact", {"cats": cats})
         for suf in self.ADV_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 2:
+                cats = self._adv_categories(w[:-len(suf)], suf)
                 return self._r(raw, w[:-len(suf)], "ADV", "Ravish",
-                               "qo'shimchali ravish (-" + suf + ")", 0.75, "adv+" + suf)
+                               "qo'shimchali ravish (-" + suf + ")", 0.75, "adv+" + suf, {"cats": cats})
 
         return self._r(raw, w, "UNKNOWN", "Noma'lum", "", 0.0, "no_rule")
 
@@ -294,6 +404,177 @@ class UzbekRuleEngine:
             "Tuzilishi":            tuzilish,
             "Yasalishi":            yasalish,
             "Sifatning LGM":        lgm,
+        }
+
+    # ── Olmosh kategoriyalari ──
+    def _pron_categories(self, stem, suf=""):
+        if stem in self.KISHILIK:        man = "kishilik olmoshi"
+        elif stem in self.KORSATISH:     man = "ko'rsatish olmoshi"
+        elif stem in self.SOROQ:         man = "so'roq olmoshi"
+        elif stem in self.BELGILASH:     man = "belgilash olmoshi"
+        elif stem in self.BOLISHSIZLIK:  man = "bo'lishsizlik olmoshi"
+        elif stem in self.OZLIK:         man = "o'zlik olmoshi"
+        elif stem in self.GUMON:         man = "gumon olmoshi"
+        else:                            man = "olmosh"
+
+        SHAXS = {"men":"I shaxs birlik","sen":"II shaxs birlik","u":"III shaxs birlik",
+                 "biz":"I shaxs ko'plik","siz":"II shaxs ko'plik","ular":"III shaxs ko'plik"}
+        shaxs = SHAXS.get(stem, "—")
+
+        KEL = {"ning":"qaratqich","ni":"tushum","ga":"jo'nalish","ka":"jo'nalish","qa":"jo'nalish",
+               "da":"o'rin-payt","dan":"chiqish"}
+        kelishik = "bosh kelishik"
+        for k in KEL:
+            if suf.endswith(k):
+                kelishik = KEL[k]; break
+
+        tuzilish = "qo'shma olmosh" if " " in stem or "-" in stem else "sodda olmosh"
+        yasalish = "qo'shimchali (kelishikli)" if suf else "asl olmosh"
+        return {
+            "Ma'noviy guruhi": man,
+            "Shaxs-son":       shaxs,
+            "Kelishik":        kelishik,
+            "Tuzilishi":       tuzilish,
+            "Yasalishi":       yasalish,
+        }
+
+    # ── Ravish kategoriyalari ──
+    def _adv_categories(self, w, suf=""):
+        if w in self.HOLAT_R:    man = "holat ravishi"
+        elif w in self.PAYT_R:   man = "payt ravishi"
+        elif w in self.ORIN_R:   man = "o'rin ravishi"
+        elif w in self.MIQDOR_R: man = "miqdor-daraja ravishi"
+        elif w in self.MAQSAD_R: man = "maqsad-sabab ravishi"
+        else:                    man = "ravish"
+
+        parts = w.split("-")
+        if " " in w:                                  tuz = "qo'shma ravish"
+        elif len(parts) == 2 and parts[0] == parts[1]: tuz = "juft (takroriy) ravish"
+        elif "-" in w:                                 tuz = "qo'shma ravish"
+        elif suf:                                      tuz = "qo'shimchali (yasama)"
+        else:                                          tuz = "sodda ravish"
+
+        YASAMA_SUF = {"cha","lab","dek","day","lay","siz","an","in","larcha","chasiga","layin"}
+        if suf in YASAMA_SUF:   yas = "yasama (-" + suf + ")"
+        elif w in self.ALL_ADV: yas = "asl ravish"
+        else:                   yas = "yasama ravish"
+
+        if w in self.HOLAT_R:     lgm = "harakat-holat bildiruvchi"
+        elif w in self.PAYT_R:    lgm = "payt (vaqt) bildiruvchi"
+        elif w in self.ORIN_R:    lgm = "o'rin (joy) bildiruvchi"
+        elif w in self.MIQDOR_R:  lgm = "miqdor-daraja bildiruvchi"
+        elif w in self.MAQSAD_R:  lgm = "maqsad-sabab bildiruvchi"
+        else:                     lgm = "belgi-holat bildiruvchi"
+
+        daraja = "oddiy daraja"
+        return {
+            "Ma'noviy guruhi": man,
+            "Daraja":          daraja,
+            "Tuzilishi":       tuz,
+            "Yasalishi":       yas,
+            "Ravishning LGM":  lgm,
+        }
+
+    # ── Son kategoriyalari ──
+    def _num_categories(self, stem, ntype="", is_digit=False, is_compound=False):
+        MAN_MAP = {
+            "tartib":    "tartib soni",
+            "dona":      "dona (-ta) son",
+            "chama":     "chama (taxminiy) son",
+            "jamlovchi": "jamlovchi son",
+            "taqsim":    "taqsim son",
+        }
+        man = MAN_MAP.get(ntype, "miqdor (sanoq) son")
+
+        if is_compound:                           tuz = "qo'shma son"
+        elif stem and "-" in str(stem):           tuz = "juft/qo'shma son"
+        elif ntype:                               tuz = "qo'shimchali (yasama)"
+        else:                                     tuz = "sodda son"
+
+        if is_digit:    yas = "raqam ko'rinishida"
+        elif ntype:     yas = "yasama (qo'shimchali)"
+        else:           yas = "asl (sodda) son"
+
+        shakl = "raqam" if is_digit else "so'z bilan"
+
+        if ntype == "tartib":       lgm = "tartib bildiruvchi"
+        elif ntype == "dona":       lgm = "dona-miqdor bildiruvchi"
+        elif ntype == "chama":      lgm = "chama (taxminiy miqdor)"
+        elif ntype == "jamlovchi":  lgm = "jamlovchi ma'no"
+        elif ntype == "taqsim":     lgm = "taqsim ma'no"
+        else:                       lgm = "sanoq-miqdor bildiruvchi"
+
+        return {
+            "Ma'noviy guruhi": man,
+            "Tuzilishi":       tuz,
+            "Yasalishi":       yas,
+            "Shakli":          shakl,
+            "Sonning LGM":     lgm,
+        }
+
+    # ── Fe'l kategoriyalari ──
+    def _verb_categories(self, stem, suf=""):
+        # Zamon
+        PAST   = {"di","dim","ding","dik","dik","dilar","dingiz",
+                  "madi","madim","mading","madik","madilar","madingiz",
+                  "magan","magandim","magandi","magandik","magansiz",
+                  "ganman","gansan","ganmiz","gansiz","ganlar",
+                  "ibman","ibsan","ibmiz","ibsiz","ibdi"}
+        PRES   = {"yap","yapti","yapman","yapsan","yapmiz","yapsiz",
+                  "yotir","yotibdi","yotibman","yotibsan","yotibmiz","yotibsiz",
+                  "yotgan","ayotgan","moqda"}
+        FUT    = {"ajak","ajakman","ajaksan","ajakmiz","ajaksiz",
+                  "moqchi","moqchiman","moqchisan","moqchimiz","moqchisiz"}
+        AORIST = {"adi","aman","asan","amiz","asiz","adilar",
+                  "ydi","yaman","yasan","yamiz","yasiz"}
+        if suf in PAST:        zamon = "o'tgan zamon"
+        elif suf in PRES:      zamon = "hozirgi zamon"
+        elif suf in FUT:       zamon = "kelasi zamon"
+        elif suf in AORIST:    zamon = "hozirgi-kelasi (aorist)"
+        elif suf == "moq":     zamon = "noaniq (infinitiv)"
+        else:                  zamon = "—"
+
+        # Mayl
+        ORDER = {"gin","sin","sinlar"}
+        COND  = {"sa","sam","sang","sak","sangiz","salar"}
+        if suf in ORDER:       mayl = "buyruq-istak mayli"
+        elif suf in COND:      mayl = "shart mayli"
+        elif suf == "moqchi" or suf.startswith("moqchi"): mayl = "maqsad mayli"
+        elif suf == "moq":     mayl = "harakat nomi"
+        else:                  mayl = "xabar (aniqlik) mayli"
+
+        # Shaxs-son
+        S1B = {"man","yapman","yotibman","ganman","ibman","ajakman","aman","yaman","moqchiman","sam","dim","madim","gandim","magandim","madingiz"}
+        S2B = {"san","yapsan","yotibsan","gansan","ibsan","ajaksan","asan","yasan","moqchisan","sang","ding","mading","gansan","magansiz"}
+        S3B = {"di","madi","magan","adi","ydi","yapti","yotibdi","sa","sin","gan","ib","yotgan"}
+        S1K = {"miz","yapmiz","yotibmiz","ganmiz","ibmiz","ajakmiz","amiz","yamiz","moqchimiz","sak","dik","madik","gandik","magandik"}
+        S2K = {"ngiz","yapsiz","yotibsiz","gansiz","ibsiz","ajaksiz","asiz","yasiz","moqchisiz","sangiz","dingiz","madingiz","magansiz"}
+        S3K = {"lar","dilar","madilar","adilar","ganlar","sinlar","salar"}
+        if suf in S1B:   shaxs = "I shaxs birlik"
+        elif suf in S2B: shaxs = "II shaxs birlik"
+        elif suf in S1K: shaxs = "I shaxs ko'plik"
+        elif suf in S2K: shaxs = "II shaxs ko'plik"
+        elif suf in S3K: shaxs = "III shaxs ko'plik"
+        elif suf in S3B: shaxs = "III shaxs birlik"
+        else:            shaxs = "—"
+
+        # Bo'lishli/bo'lishsiz
+        bolishli = "bo'lishsiz (-ma-)" if suf.startswith("ma") or suf.startswith("magan") or suf.startswith("madi") else "bo'lishli"
+
+        # Yasalishi / tuzilishi
+        YASAMA_FE_SUF = {"la","lash","lan","lat","tir","dir","gaz","giz"}
+        yas = "asl (sodda) fe'l"
+        for ys in YASAMA_FE_SUF:
+            if stem.endswith(ys) and len(stem) > len(ys) + 1:
+                yas = "yasama fe'l (-" + ys + ")"
+                break
+
+        return {
+            "Zamon":      zamon,
+            "Mayl":       mayl,
+            "Shaxs-son":  shaxs,
+            "Bo'lishli":  bolishli,
+            "Yasalishi":  yas,
         }
 
     def _pron_sub(self, st):
@@ -534,26 +815,67 @@ class UzbekPOSTagger:
 
         while i < len(tokens):
 
-            # ── 1. Birikma (2-3 token) ──
+            # ── 1. Birikma (2-3 token): Olmosh, Ravish ──
             hit = False
             for ln in [3, 2]:
                 if i + ln <= len(tokens):
                     phrase = " ".join(tokens[i:i + ln])
                     pn     = self.e.norm(phrase)
+                    # Qo'shma olmosh
                     if pn in self.e.ALL_PRON_B:
                         sub = ("ko'rsatish olmoshi" if pn in self.e.KORSATISH_B else
                                "belgilash olmoshi"  if pn in self.e.BELGILASH_B else
                                "bo'lishsizlik olmoshi" if pn in self.e.BOLISHSIZLIK_B else
                                "gumon olmoshi")
+                        pcats = self.e._pron_categories(pn, "")
+                        pcats["Tuzilishi"] = "qo'shma olmosh"
                         results.append({
                             "token": phrase, "stem": pn,
                             "pos": "P", "pos_uz": "Olmosh",
                             "subtype": sub, "confidence": 1.0,
-                            "rule": "birikma", "index": i,
+                            "rule": "birikma_p", "index": i, "cats": pcats,
+                        })
+                        i += ln; hit = True; break
+                    # Qo'shma ravish
+                    if pn in self.e.ALL_ADV_B:
+                        acats = self.e._adv_categories(pn, "")
+                        acats["Tuzilishi"] = "qo'shma ravish"
+                        results.append({
+                            "token": phrase, "stem": pn,
+                            "pos": "ADV", "pos_uz": "Ravish",
+                            "subtype": acats.get("Ma'noviy guruhi", "ravish"),
+                            "confidence": 1.0,
+                            "rule": "birikma_adv", "index": i, "cats": acats,
                         })
                         i += ln; hit = True; break
             if hit:
                 continue
+
+            # ── 1b. Qo'shma son (qo'shni sonlar): "yigirma besh", "bir yuz ellik" ──
+            if i + 1 < len(tokens):
+                w0 = self.e.norm(tokens[i])
+                if w0 in self.e.ALL_NUM:
+                    j = i + 1
+                    parts = [tokens[i]]
+                    while j < len(tokens):
+                        wj = self.e.norm(tokens[j])
+                        if wj in self.e.ALL_NUM:
+                            parts.append(tokens[j]); j += 1
+                        else:
+                            break
+                    if len(parts) >= 2:
+                        phrase = " ".join(parts)
+                        pn     = self.e.norm(phrase)
+                        ncats  = self.e._num_categories(pn, "", False, True)
+                        results.append({
+                            "token": phrase, "stem": pn,
+                            "pos": "NUM", "pos_uz": "Son",
+                            "subtype": "qo'shma son",
+                            "confidence": 1.0,
+                            "rule": "birikma_num", "index": i, "cats": ncats,
+                        })
+                        i = j
+                        continue
 
             tok  = tokens[i]
             prev = tokens[i - 1] if i > 0 else ""
