@@ -13,28 +13,18 @@ const API = (location.hostname === "localhost" || location.hostname === "127.0.0
 let ALL_TOKENS = [];
 
 const POS_COLOR = {
-  P:"#059669", ADV:"#2563eb", ADJ:"#d97706",
+  P:"#059669", RR:"#2563eb", JJ:"#d97706",
   NUM:"#7c3aed", N:"#64748b", V:"#db2777",
   PUNCT:"#94a3b8", UNKNOWN:"#6b7280",
 };
 const POS_LABEL = {
-  P:"Olmosh", ADV:"Ravish", ADJ:"Sifat", NUM:"Son",
+  P:"Olmosh", RR:"Ravish", JJ:"Sifat", NUM:"Son",
   N:"Ot", V:"Fe'l", PUNCT:"Tinish", UNKNOWN:"Noma'lum",
 };
 const POS_ICON = {
-  P:"fas fa-user", ADV:"fas fa-bolt", ADJ:"fas fa-palette",
+  P:"fas fa-user", RR:"fas fa-bolt", JJ:"fas fa-palette",
   NUM:"fas fa-hashtag", N:"fas fa-font", V:"fas fa-running",
   PUNCT:"fas fa-minus", UNKNOWN:"fas fa-question",
-};
-const RULE_BADGE = {
-  pron_kishilik:"Kishilik",pron_korsatish:"Ko'rsatish",
-  pron_soroq:"So'roq",pron_belgilash:"Belgilash",
-  pron_bolishsizlik:"Bo'lishsizlik",pron_ozlik:"O'zlik",
-  pron_gumon:"Gumon",birikma:"Birikma",
-  adj_orttirma:"Orttirma",adj_ozaytirma:"Ozaytirma",
-  adj_exact:"Sifat",adv_exact:"Ravish",num_exact:"Son",
-  num_hisob:"Hisob so'z",digit:"Raqam",
-  database:"DB",stat_model:"Stat",groq_ai:"Groq AI",no_rule:"?",
 };
 
 /* ── Toast ── */
@@ -125,15 +115,10 @@ function renderTable(tokens) {
     const pos   = t.pos  || "UNKNOWN";
     const color = POS_COLOR[pos] || "#64748b";
     const label = POS_LABEL[pos] || pos;
-    const conf  = Math.round((t.confidence || 0) * 100);
-    const ruleKey = (t.rule || "").split("+")[0];
-    const ruleBadge = RULE_BADGE[ruleKey] || t.rule || "—";
-    const confCls   = conf >= 90 ? "conf-high" : conf >= 70 ? "conf-mid" : "conf-low";
     const isStatRow = t.rule === "stat_model";
     const hasDb     = t.db && Object.keys(t.db).length > 0;
     const hasCats   = t.cats && Object.keys(t.cats).length > 0;
-    const hasAdjOld = t.adj_cats && Object.keys(t.adj_cats).length > 0;
-    const clickable = hasDb || hasCats || hasAdjOld;
+    const clickable = hasDb || hasCats;
 
     const tr = document.createElement("tr");
     tr.setAttribute("data-pos",   pos);
@@ -150,9 +135,7 @@ function renderTable(tokens) {
       "<td class='td-stem mono'>" + esc(t.stem || "—") + "</td>" +
       "<td class='td-pos'><span class='pos-badge' style='background:" + color + "20;color:" + color + ";border:1px solid " + color + "40'><i class='" + (POS_ICON[pos] || "fas fa-tag") + "'></i> " + pos + "</span></td>" +
       "<td>" + label + "</td>" +
-      "<td class='td-sub'>" + esc(t.subtype || "—") + "</td>" +
-      "<td><span class='conf " + confCls + "'>" + conf + "%</span></td>" +
-      "<td class='td-rule mono'>" + esc(ruleBadge) + (t.rule && t.rule.includes("+") ? " <span class='suf-tag'>+" + t.rule.split("+")[1] + "</span>" : "") + "</td>";
+      "<td class='td-sub'>" + esc(t.subtype || "—") + "</td>";
 
     if (clickable) {
       tr.addEventListener("click", () => showDetail(t));
@@ -173,57 +156,43 @@ function showDetail(t) {
 
   let rows = "<table class='detail-table'>";
   rows += "<tr><th>FORM</th><td>" + esc(t.token) + "</td></tr>";
-  rows += "<tr><th>O'zak (LEMMA)</th><td>" + esc(t.stem || "—") + "</td></tr>";
-  rows += "<tr><th>POS</th><td>" + esc(t.pos) + " — " + esc(POS_LABEL[t.pos] || "") + "</td></tr>";
-  rows += "<tr><th>Tur / Daraja</th><td>" + esc(t.subtype || "—") + "</td></tr>";
-  rows += "<tr><th>Ishonch</th><td>" + Math.round((t.confidence || 0) * 100) + "%</td></tr>";
-  rows += "<tr><th>Qoida</th><td>" + esc(t.rule || "—") + "</td></tr>";
+  rows += "<tr><th>LEMMA</th><td>" + esc(t.stem || "—") + "</td></tr>";
+  rows += "<tr><th>XPOS</th><td><strong>" + esc(t.pos) + "</strong> — " + esc(POS_LABEL[t.pos] || "") + "</td></tr>";
 
-  // Lingvistik kategoriyalar (Olmosh/Ravish/Sifat/Son/Fe'l)
-  const catsObj = t.cats || t.adj_cats;
-  if (catsObj && Object.keys(catsObj).length) {
-    const headerMap = {
-      "P":   { color: "#059669", label: "🟢 Olmosh lingvistik tahlili"  },
-      "ADV": { color: "#2563eb", label: "🔵 Ravish lingvistik tahlili"  },
-      "ADJ": { color: "#d97706", label: "🟠 Sifat lingvistik tahlili"   },
-      "NUM": { color: "#7c3aed", label: "🟣 Son lingvistik tahlili"     },
-      "V":   { color: "#db2777", label: "🌸 Fe'l lingvistik tahlili"    },
-    };
-    const h = headerMap[t.pos] || { color: "#64748b", label: "Lingvistik tahlil" };
+  // Datasetdagi lingvistik tahlilni (DB yoki rule cats) ko'rsatish
+  const headerMap = {
+    "P":   { color: "#059669", label: "Olmosh lingvistik tahlili"  },
+    "RR":  { color: "#2563eb", label: "Ravish lingvistik tahlili"  },
+    "JJ":  { color: "#d97706", label: "Sifat lingvistik tahlili"   },
+    "NUM": { color: "#7c3aed", label: "Son lingvistik tahlili"     },
+    "V":   { color: "#db2777", label: "Fe'l lingvistik tahlili"    },
+    "N":   { color: "#64748b", label: "Ot lingvistik tahlili"      },
+  };
+  const h = headerMap[t.pos] || { color: "#64748b", label: "Lingvistik tahlil" };
+
+  // DB dan kelgan ma'lumotlar (datasetning aynan o'zining maydonlari)
+  if (t.db && Object.keys(t.db).length) {
     rows += "<tr><td colspan='2' style='padding:6px 8px;font-weight:600;color:" +
             h.color + ";background:" + h.color + "14;border-top:2px solid " + h.color + "40'>" +
-            h.label + "</td></tr>";
-    const icons = {
-      // umumiy
-      "Ma'noviy guruhi":     "🏷️",
-      "Belgining xususiyati":"🏷️",
-      "Tuzilishi":           "🧱",
-      "Yasalishi":           "⚙️",
-      "Daraja":              "📊",
-      "Shaxs-son":           "👥",
-      "Kelishik":            "🔗",
-      "Shakli":              "🔢",
-      "Zamon":               "🕒",
-      "Mayl":                "🎯",
-      "Bo'lishli":           "±",
-      // LGM-lar
-      "Sifatning LGM":       "📖",
-      "Ravishning LGM":      "📖",
-      "Sonning LGM":         "📖",
-    };
-    for (const [k, v] of Object.entries(catsObj)) {
-      if (!v || v === "—") continue;
-      rows += "<tr><th>" + (icons[k] || "") + " " + esc(k) + "</th><td><strong>" + esc(v) + "</strong></td></tr>";
-    }
-  }
-
-  if (t.db) {
+            h.label + " (dataset)</td></tr>";
     for (const [k, v] of Object.entries(t.db)) {
       if (v && v !== "—" && v !== "∅") {
-        rows += "<tr><th>" + esc(k) + "</th><td>" + esc(String(v)) + "</td></tr>";
+        rows += "<tr><th>" + esc(k) + "</th><td><strong>" + esc(String(v)) + "</strong></td></tr>";
       }
     }
   }
+
+  // Rule-engine tomonidan sintezlangan kategoriyalar (DB topilmaganda)
+  if (t.cats && Object.keys(t.cats).length && !(t.db && Object.keys(t.db).length)) {
+    rows += "<tr><td colspan='2' style='padding:6px 8px;font-weight:600;color:" +
+            h.color + ";background:" + h.color + "14;border-top:2px solid " + h.color + "40'>" +
+            h.label + "</td></tr>";
+    for (const [k, v] of Object.entries(t.cats)) {
+      if (!v || v === "—") continue;
+      rows += "<tr><th>" + esc(k) + "</th><td><strong>" + esc(String(v)) + "</strong></td></tr>";
+    }
+  }
+
   rows += "</table>";
   body.innerHTML = rows;
   panel.style.display = "block";
@@ -315,12 +284,10 @@ async function exportExcel() {
     const rows = ALL_TOKENS.map((t, i) => ({
       "#":           i + 1,
       "Token":       t.token  || "",
-      "O'zak":       t.stem   || "",
-      "POS":         t.pos    || "",
-      "Turkum":      {"P":"Olmosh","ADV":"Ravish","ADJ":"Sifat","NUM":"Son","N":"Ot","V":"Fe'l","UNKNOWN":"Noma'lum"}[t.pos] || "",
+      "Lemma":       t.stem   || "",
+      "XPOS":        t.pos    || "",
+      "Turkum":      POS_LABEL[t.pos] || "",
       "Tur":         t.subtype || "",
-      "Ishonch %":   Math.round((t.confidence || 0) * 100),
-      "Qoida":       t.rule   || "",
     }));
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);

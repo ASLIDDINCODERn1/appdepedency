@@ -35,8 +35,20 @@ if GROQ_API_KEY:
         log.warning(f"Groq ulanmadi: {e}")
 
 POS_UZ = {
-    "P":"Olmosh","ADV":"Ravish","ADJ":"Sifat","NUM":"Son",
+    "P":"Olmosh","RR":"Ravish","JJ":"Sifat","NUM":"Son",
     "N":"Ot","V":"Fe'l","PUNCT":"Tinish","UNKNOWN":"Noma'lum",
+}
+
+# Dataset XPOS (turli yozilishlar) -> kanonik tag
+XPOS_NORM_MAP = {
+    "P":"P","p":"P","PP":"P",
+    "RR":"RR","R":"RR","rr":"RR",
+    "MD":"RR",                      # MD ham (modal/ravish)
+    "JJ":"JJ","Adj":"JJ","J":"JJ","jj":"JJ",
+    "NUM":"NUM","Num":"NUM","num":"NUM",
+    "N":"N","NER":"N","n":"N","N ":"N",
+    "V":"V","VB":"V","v":"V","V ":"V"," V":"V",
+    "PUNCT":"PUNCT",
 }
 
 # ═══════════════════════════════════════════════════════
@@ -172,6 +184,8 @@ class UzbekRuleEngine:
         # Hozirgi-kelasi (aorist)
         "adilar","amiz","asiz","aman","asan","adi",
         "yamiz","yasiz","yaman","yasan","ydi",
+        "iyman","iysan","iymiz","iysiz","iyadi","iydi",
+        "yman","ysan","ymiz","ysiz",
         # Shart mayli
         "sangiz","salar","sam","sang","sak","sa",
         # Buyruq
@@ -295,14 +309,14 @@ class UzbekRuleEngine:
         # ── SON ──
         if w in self.ALL_NUM:
             cats = self._num_categories(w, "", False, False)
-            return self._r(raw, w, "NUM", "Son", "sodda son", 1.0, "num_exact", {"cats": cats})
+            return self._r(raw, w, "NUM", "Son", "Sanoq (miqdor) son", 1.0, "num_exact", {"cats": cats})
         if pv in self.ALL_NUM and w in self.HISOB:
             cats = self._num_categories(w, "dona", False, False)
-            return self._r(raw, w, "NUM", "Son", "hisob so'z", 0.92, "num_hisob", {"cats": cats})
+            return self._r(raw, w, "NUM", "Son", "Hisob so'z", 0.92, "num_hisob", {"cats": cats})
         stn, nt = self._num_stem(w)
         if stn:
             cats = self._num_categories(stn, nt, False, False)
-            return self._r(raw, stn, "NUM", "Son", nt + " son", 0.95, "num+" + nt, {"cats": cats})
+            return self._r(raw, stn, "NUM", "Son", cats[" Ma'noviy xususiyatlari"], 0.95, "num+" + nt, {"cats": cats})
 
         # ── FE'L ── (sifat/ravishdan oldin! aks holda "yugurdi" → ravish bo'p qoladi)
         vb = self._is_verb(w)
@@ -317,32 +331,44 @@ class UzbekRuleEngine:
         # ── SIFAT ──
         if pv in self.ORTTIRMA and w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
-            return self._r(raw, w, "ADJ", "Sifat", "orttirma daraja", 1.0, "adj_orttirma", {"cats": cats, "adj_cats": cats})
+            return self._r(raw, w, "JJ", "Sifat", "orttirma daraja", 1.0, "adj_orttirma", {"cats": cats})
         if pv in self.OZAYTIRMA and w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
-            return self._r(raw, w, "ADJ", "Sifat", "ozaytirma daraja", 1.0, "adj_ozaytirma", {"cats": cats, "adj_cats": cats})
+            return self._r(raw, w, "JJ", "Sifat", "ozaytirma daraja", 1.0, "adj_ozaytirma", {"cats": cats})
         if w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
-            return self._r(raw, w, "ADJ", "Sifat", self._adj_sub(w), 1.0, "adj_exact", {"cats": cats, "adj_cats": cats})
-        for suf in self.ADJ_SUF:
+            return self._r(raw, w, "JJ", "Sifat", self._adj_sub(w), 1.0, "adj_exact", {"cats": cats})
+        # Sifat sufiks — faqat ishonchli sufikslar (li/lik/dor/chan/siz/simon/mand/dagi)
+        SAFE_ADJ_SUF = ("li","lik","dor","chan","siz","simon","mand","dagi","roq")
+        for suf in SAFE_ADJ_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 2:
-                sub = {"roq":"qiyosiy daraja (-roq)","dagi":"o'rin-payt (-dagi)",
-                       "gi":"o'rin-payt (-gi)","qi":"o'rin-payt (-qi)",
-                       "li":"xususiyat (-li)","lik":"xususiyat (-lik)",
-                       "simon":"o'xshashlik (-simon)","dor":"egalik (-dor)",
-                       "chan":"moyillik (-chan)","siz":"yo'qlik (-siz)"}.get(suf, "sifat (-" + suf + ")")
-                cats = self._adj_categories(w[:-len(suf)], pv, suf)
-                return self._r(raw, w[:-len(suf)], "ADJ", "Sifat", sub, 0.80, "adj+" + suf, {"cats": cats, "adj_cats": cats})
+                root = w[:-len(suf)]
+                # ildiz boshqa turkumda bo'lsa, o'tkazib yuboramiz
+                if root in self.ALL_PRON or root in self.ALL_ADV \
+                   or root in self.ALL_NUM or root in self.HISOB:
+                    continue
+                sub = {"roq":"qiyosiy daraja","li":"xususiyat sifati",
+                       "lik":"xususiyat sifati","dagi":"o'rin-payt sifati",
+                       "simon":"o'xshashlik","dor":"egalik","chan":"moyillik",
+                       "siz":"yo'qlik","mand":"egalik"}.get(suf, "sifat")
+                cats = self._adj_categories(root, pv, suf)
+                return self._r(raw, root, "JJ", "Sifat", sub, 0.80, "adj+" + suf, {"cats": cats})
 
-        # ── RAVISH ──
+        # ── RAVISH ── (faqat aniq ravishlar; sufiksli detektsiyani olib tashlaymiz — false positive)
         if w in self.ALL_ADV:
             cats = self._adv_categories(w, "")
-            return self._r(raw, w, "ADV", "Ravish", self._adv_sub(w), 1.0, "adv_exact", {"cats": cats})
-        for suf in self.ADV_SUF:
-            if w.endswith(suf) and len(w) > len(suf) + 2:
-                cats = self._adv_categories(w[:-len(suf)], suf)
-                return self._r(raw, w[:-len(suf)], "ADV", "Ravish",
-                               "qo'shimchali ravish (-" + suf + ")", 0.75, "adv+" + suf, {"cats": cats})
+            return self._r(raw, w, "RR", "Ravish", self._adv_sub(w), 1.0, "adv_exact", {"cats": cats})
+        # Ravish sufikslari faqat juda qisqartirilgan ro'yxat (faqat aniq ravish yasovchilar)
+        SAFE_ADV_SUF = ("chasiga","larcha","cha","lab")
+        for suf in SAFE_ADV_SUF:
+            if w.endswith(suf) and len(w) > len(suf) + 3:
+                root = w[:-len(suf)]
+                if root in self.ALL_ADJ or root in self.ALL_PRON \
+                   or root in self.ALL_NUM or root in self.HISOB:
+                    continue
+                cats = self._adv_categories(root, suf)
+                return self._r(raw, root, "RR", "Ravish",
+                               "yasama ravish (-" + suf + ")", 0.70, "adv+" + suf, {"cats": cats})
 
         return self._r(raw, w, "UNKNOWN", "Noma'lum", "", 0.0, "no_rule")
 
@@ -354,162 +380,155 @@ class UzbekRuleEngine:
         return d
 
     def _adj_categories(self, w, pv="", suf=""):
-        """Sifatning 5 ta lingvistik kategoriyasini qaytaradi."""
-        # 1. Belgining xususiyati
-        if w in self.RANG_TUS:          bel = "rang-tus"
-        elif w in self.MAZA_TAM:        bel = "maza-ta'm"
-        elif w in self.HAJM:            bel = "hajm va o'lcham"
-        elif w in self.HID:             bel = "hid"
-        elif w in self.XUSUSIYAT:       bel = "xarakter-xususiyat"
-        elif suf in ("li", "lik"):      bel = "xususiyat (-" + suf + ")"
-        elif suf in ("dor", "mand"):    bel = "egalik (-" + suf + ")"
-        elif suf == "siz":              bel = "yo'qlik (-siz)"
-        elif suf == "simon":            bel = "o'xshashlik (-simon)"
-        elif suf == "chan":             bel = "moyillik (-chan)"
-        elif suf in ("dagi","gi","qi"): bel = "o'rin-payt (-" + suf + ")"
-        else:                           bel = "umumiy belgi"
+        """Sifatning 5 ta lingvistik kategoriyasi (dataset maydonlari)."""
+        if w in self.RANG_TUS or w in self.MAZA_TAM or w in self.HAJM \
+           or w in self.HID or w in self.XUSUSIYAT:    bel = "asliy sifat"
+        elif suf:                                       bel = "nisbiy sifat"
+        else:                                           bel = "asliy sifat"
 
-        # 2. Daraja
         if pv in self.ORTTIRMA:         daraja = "orttirma daraja"
         elif pv in self.OZAYTIRMA:      daraja = "ozaytirma daraja"
-        elif suf == "roq":              daraja = "qiyosiy daraja (-roq)"
-        else:                           daraja = "oddiy daraja"
+        elif suf == "roq":              daraja = "qiyosiy daraja"
+        else:                           daraja = "oddiy"
 
-        # 3. Tuzilishi
         parts = w.split("-")
-        if len(parts) == 2 and parts[0] == parts[1]: tuzilish = "juft (takroriy)"
-        elif "-" in w:                               tuzilish = "qo'shma sifat"
-        elif suf:                                    tuzilish = "qo'shimchali (yasama)"
-        else:                                        tuzilish = "sodda sifat"
+        if len(parts) == 2 and parts[0] == parts[1]: tuz = "juft (takroriy)"
+        elif "-" in w:                               tuz = "qo'shma"
+        elif suf:                                    tuz = "yasama"
+        else:                                        tuz = "sodda"
 
-        # 4. Yasalishi
         YASAMA = {"li","lik","dor","chan","siz","simon","mand","roq","gi","dagi","qi"}
-        if suf in YASAMA:   yasalish = "yasama (-" + suf + ")"
-        elif w in self.ALL_ADJ: yasalish = "asl sifat"
-        else:               yasalish = "yasama sifat"
+        if suf in YASAMA:        yas = "yasama sifat"
+        elif w in self.ALL_ADJ:  yas = "tub sifat"
+        else:                    yas = "yasama sifat"
 
-        # 5. Sifatning LGM
-        if w in self.RANG_TUS:              lgm = "rang-tus bildiruvchi"
-        elif w in self.MAZA_TAM:            lgm = "maza-ta'm bildiruvchi"
-        elif w in self.HAJM:                lgm = "hajm-o'lcham bildiruvchi"
-        elif w in self.HID:                 lgm = "hid bildiruvchi"
-        elif suf in ("dagi","gi","qi"):     lgm = "o'rin-payt munosabatli"
-        elif suf == "roq":                  lgm = "qiyosiy ma'noli"
-        elif suf in ("siz","li","lik"):     lgm = "munosabat bildiruvchi"
-        else:                               lgm = "xarakter-xususiyat bildiruvchi"
+        if w in self.RANG_TUS:          lgm = "rang-tus sifati"
+        elif w in self.MAZA_TAM:        lgm = "maza-ta'm sifati"
+        elif w in self.HAJM:            lgm = "hajm-o'lcham sifati"
+        elif w in self.HID:             lgm = "hid bildiruvchi sifat"
+        elif w in self.XUSUSIYAT:       lgm = "xususiyat sifati"
+        else:                           lgm = "xususiyat sifati"
 
         return {
             "Belgining xususiyati": bel,
             "Daraja":               daraja,
-            "Tuzilishi":            tuzilish,
-            "Yasalishi":            yasalish,
-            "Sifatning LGM":        lgm,
+            "Tuzulishi":            tuz,
+            "Yasalishi":            yas,
+            "Sifatning LMGlari":    lgm,
         }
 
-    # ── Olmosh kategoriyalari ──
+    # ── Olmosh kategoriyalari (dataset maydonlari) ──
     def _pron_categories(self, stem, suf=""):
-        if stem in self.KISHILIK:        man = "kishilik olmoshi"
-        elif stem in self.KORSATISH:     man = "ko'rsatish olmoshi"
-        elif stem in self.SOROQ:         man = "so'roq olmoshi"
-        elif stem in self.BELGILASH:     man = "belgilash olmoshi"
-        elif stem in self.BOLISHSIZLIK:  man = "bo'lishsizlik olmoshi"
-        elif stem in self.OZLIK:         man = "o'zlik olmoshi"
-        elif stem in self.GUMON:         man = "gumon olmoshi"
-        else:                            man = "olmosh"
+        if stem in self.KISHILIK:        man = "Kishilik olmoshi"
+        elif stem in self.KORSATISH:     man = "Ko'rsatish olmoshi"
+        elif stem in self.SOROQ:         man = "So'roq olmoshi"
+        elif stem in self.BELGILASH:     man = "Belgilash olmoshi"
+        elif stem in self.BOLISHSIZLIK:  man = "Bo'lishsizlik olmoshi"
+        elif stem in self.OZLIK:         man = "O'zlik olmoshi"
+        elif stem in self.GUMON:         man = "Gumon olmoshi"
+        else:                            man = "Olmosh"
 
-        SHAXS = {"men":"I shaxs birlik","sen":"II shaxs birlik","u":"III shaxs birlik",
-                 "biz":"I shaxs ko'plik","siz":"II shaxs ko'plik","ular":"III shaxs ko'plik"}
-        shaxs = SHAXS.get(stem, "—")
+        SHAXS_SON = {"men":"Birlik","sen":"Birlik","u":"Birlik",
+                     "biz":"Ko'plik","siz":"Ko'plik","ular":"Ko'plik"}
+        son = SHAXS_SON.get(stem, "Birlik")
+        if suf.startswith("lar"): son = "Ko'plik"
 
-        KEL = {"ning":"qaratqich","ni":"tushum","ga":"jo'nalish","ka":"jo'nalish","qa":"jo'nalish",
-               "da":"o'rin-payt","dan":"chiqish"}
-        kelishik = "bosh kelishik"
+        KEL = {"ning":"Qaratqich kelishik","ni":"Tushum kelishik",
+               "ga":"Jo'nalish kelishik","ka":"Jo'nalish kelishik","qa":"Jo'nalish kelishik",
+               "da":"O'rin-payt kelishik","dan":"Chiqish kelishik"}
+        kelishik = "Bosh kelishik"
         for k in KEL:
             if suf.endswith(k):
                 kelishik = KEL[k]; break
 
-        tuzilish = "qo'shma olmosh" if " " in stem or "-" in stem else "sodda olmosh"
-        yasalish = "qo'shimchali (kelishikli)" if suf else "asl olmosh"
+        EGA_SUF = {"im":"I shaxs egalik","ing":"II shaxs egalik","i":"III shaxs egalik",
+                   "imiz":"I shaxs egalik (ko'plik)","ingiz":"II shaxs egalik (ko'plik)",
+                   "lari":"III shaxs egalik (ko'plik)"}
+        egalik = "Egalik yo'q"
+        for k, v in EGA_SUF.items():
+            if suf == k or suf.startswith(k):
+                egalik = v; break
+
+        tuzilish = "qo'shma" if " " in stem or "-" in stem else "sodda"
+        yasalish = "affiksatsiya" if suf else "tub"
+
+        # Olmoshning gapda bajaradigan vazifasiga ko'ra turi (default — kontekstsiz)
+        if stem in self.KISHILIK:           vazifa = "Ot o'rnida qo'llangan"
+        elif stem in self.KORSATISH:        vazifa = "Sifat o'rnida qo'llangan"
+        elif stem in self.SOROQ:
+            if stem in {"qancha","nechta","necha"}: vazifa = "Son o'rnida qo'llangan"
+            elif stem in {"qanday","qanaqa","qaysi"}: vazifa = "Sifat o'rnida qo'llangan"
+            elif stem in {"qayerda","qachon","nega","qayer","qayda"}: vazifa = "Ravish o'rnida qo'llangan"
+            else:                                    vazifa = "Ot o'rnida qo'llangan"
+        elif stem in self.BELGILASH:        vazifa = "Sifat o'rnida qo'llangan"
+        elif stem in self.BOLISHSIZLIK:     vazifa = "Ot o'rnida qo'llangan"
+        elif stem in self.OZLIK:            vazifa = "Ot o'rnida qo'llangan"
+        elif stem in self.GUMON:            vazifa = "Ot o'rnida qo'llangan"
+        else:                               vazifa = "Ot o'rnida qo'llangan"
+
         return {
-            "Ma'noviy guruhi": man,
-            "Shaxs-son":       shaxs,
-            "Kelishik":        kelishik,
-            "Tuzilishi":       tuzilish,
-            "Yasalishi":       yasalish,
+            "Olmoshlarning ma'noviy guruhlari": man,
+            "Tuzilishi":                        tuzilish,
+            "Yasalishi":                        yasalish,
+            "Kelishik":                         kelishik,
+            "Son":                              son,
+            "Egalik":                           egalik,
+            "Olmoshlarning gapda bajaradigan vazifasiga ko'ra turlari": vazifa,
         }
 
-    # ── Ravish kategoriyalari ──
+    # ── Ravish kategoriyalari (dataset maydonlari) ──
     def _adv_categories(self, w, suf=""):
-        if w in self.HOLAT_R:    man = "holat ravishi"
-        elif w in self.PAYT_R:   man = "payt ravishi"
-        elif w in self.ORIN_R:   man = "o'rin ravishi"
-        elif w in self.MIQDOR_R: man = "miqdor-daraja ravishi"
-        elif w in self.MAQSAD_R: man = "maqsad-sabab ravishi"
-        else:                    man = "ravish"
+        if w in self.HOLAT_R:    man = "Holat ravishi"
+        elif w in self.PAYT_R:   man = "Payt ravishi"
+        elif w in self.ORIN_R:   man = "O'rin ravishi"
+        elif w in self.MIQDOR_R: man = "Miqdor-daraja ravishi"
+        elif w in self.MAQSAD_R: man = "Maqsad-sabab ravishi"
+        else:                    man = "Ravish"
 
         parts = w.split("-")
-        if " " in w:                                  tuz = "qo'shma ravish"
-        elif len(parts) == 2 and parts[0] == parts[1]: tuz = "juft (takroriy) ravish"
-        elif "-" in w:                                 tuz = "qo'shma ravish"
-        elif suf:                                      tuz = "qo'shimchali (yasama)"
-        else:                                          tuz = "sodda ravish"
+        if " " in w:                                  tuz = "qo'shma"
+        elif len(parts) == 2 and parts[0] == parts[1]: tuz = "juft (takroriy)"
+        elif "-" in w:                                 tuz = "qo'shma"
+        elif suf:                                      tuz = "yasama"
+        else:                                          tuz = "sodda"
 
         YASAMA_SUF = {"cha","lab","dek","day","lay","siz","an","in","larcha","chasiga","layin"}
-        if suf in YASAMA_SUF:   yas = "yasama (-" + suf + ")"
-        elif w in self.ALL_ADV: yas = "asl ravish"
-        else:                   yas = "yasama ravish"
+        if suf in YASAMA_SUF:   yas = "affiksatsiya"
+        elif w in self.ALL_ADV: yas = "tub"
+        else:                   yas = "yasama"
 
-        if w in self.HOLAT_R:     lgm = "harakat-holat bildiruvchi"
-        elif w in self.PAYT_R:    lgm = "payt (vaqt) bildiruvchi"
-        elif w in self.ORIN_R:    lgm = "o'rin (joy) bildiruvchi"
-        elif w in self.MIQDOR_R:  lgm = "miqdor-daraja bildiruvchi"
-        elif w in self.MAQSAD_R:  lgm = "maqsad-sabab bildiruvchi"
-        else:                     lgm = "belgi-holat bildiruvchi"
-
-        daraja = "oddiy daraja"
         return {
-            "Ma'noviy guruhi": man,
-            "Daraja":          daraja,
-            "Tuzilishi":       tuz,
-            "Yasalishi":       yas,
-            "Ravishning LGM":  lgm,
+            "Ravishning ma'noviy guruhlari": man,
+            "Tuzilishi":                     tuz,
+            "Yasalishi":                     yas,
+            "Kelishik":                      "Bosh kelishik",
+            "Son":                           "Birlik",
+            "Egalik":                        "Egalik yo'q",
         }
 
-    # ── Son kategoriyalari ──
+    # ── Son kategoriyalari (dataset maydonlari) ──
     def _num_categories(self, stem, ntype="", is_digit=False, is_compound=False):
         MAN_MAP = {
-            "tartib":    "tartib soni",
-            "dona":      "dona (-ta) son",
-            "chama":     "chama (taxminiy) son",
-            "jamlovchi": "jamlovchi son",
-            "taqsim":    "taqsim son",
+            "tartib":    "Tartib son",
+            "dona":      "Dona son",
+            "chama":     "Chama son",
+            "jamlovchi": "Jamlovchi son",
+            "taqsim":    "Taqsim son",
         }
-        man = MAN_MAP.get(ntype, "miqdor (sanoq) son")
+        man = MAN_MAP.get(ntype, "Sanoq (miqdor) son")
 
-        if is_compound:                           tuz = "qo'shma son"
-        elif stem and "-" in str(stem):           tuz = "juft/qo'shma son"
-        elif ntype:                               tuz = "qo'shimchali (yasama)"
-        else:                                     tuz = "sodda son"
+        if is_compound:                            tuz = "qo'shma"
+        elif stem and "-" in str(stem):            tuz = "juft"
+        elif ntype:                                tuz = "yasama"
+        else:                                      tuz = "sodda"
 
-        if is_digit:    yas = "raqam ko'rinishida"
-        elif ntype:     yas = "yasama (qo'shimchali)"
-        else:           yas = "asl (sodda) son"
-
-        shakl = "raqam" if is_digit else "so'z bilan"
-
-        if ntype == "tartib":       lgm = "tartib bildiruvchi"
-        elif ntype == "dona":       lgm = "dona-miqdor bildiruvchi"
-        elif ntype == "chama":      lgm = "chama (taxminiy miqdor)"
-        elif ntype == "jamlovchi":  lgm = "jamlovchi ma'no"
-        elif ntype == "taqsim":     lgm = "taqsim ma'no"
-        else:                       lgm = "sanoq-miqdor bildiruvchi"
+        hisob = "raqam ko'rinishida" if is_digit else "—"
 
         return {
-            "Ma'noviy guruhi": man,
-            "Tuzilishi":       tuz,
-            "Yasalishi":       yas,
-            "Shakli":          shakl,
-            "Sonning LGM":     lgm,
+            " Ma'noviy xususiyatlari": man,
+            "Hisob so'zlar":           hisob,
+            "Bir so'zining ma'nolari": "—",
+            "Tuzalishiga ko'ra":       tuz,
         }
 
     # ── Fe'l kategoriyalari ──
@@ -613,8 +632,8 @@ class DatasetStatModel:
     Rule va DB topmaganida tahminiy POS qaytaradi.
     """
     XPOS_NORM = {
-        "P":  "P",   "RR": "ADV", "MD": "ADV",
-        "JJ": "ADJ", "Num":"NUM", "NUM":"NUM",
+        "P":  "P",   "RR": "RR",  "MD": "RR",
+        "JJ": "JJ",  "Adj":"JJ",  "Num":"NUM", "NUM":"NUM",
         "N":  "N",   "NER":"N",   "V":  "V",  "VB": "V",
     }
 
@@ -681,8 +700,8 @@ class DatasetStatModel:
 class DatabaseLookup:
     XPOS_MAP = {
         "P":  ("P",   "Olmosh"),
-        "RR": ("ADV", "Ravish"), "MD": ("ADV", "Ravish"),
-        "JJ": ("ADJ", "Sifat"),
+        "RR": ("RR",  "Ravish"), "MD": ("RR",  "Ravish"), "R": ("RR", "Ravish"),
+        "JJ": ("JJ",  "Sifat"),  "Adj":("JJ",  "Sifat"),  "J": ("JJ", "Sifat"),
         "Num":("NUM", "Son"),    "NUM":("NUM", "Son"),
         "N":  ("N",   "Ot"),     "NER":("N",   "Ot"),
         "V":  ("V",   "Fe'l"),   "VB": ("V",   "Fe'l"),
@@ -737,7 +756,13 @@ class DatabaseLookup:
                     if not form or form in ("FORM", "—", ""):
                         continue
                     xpos = str(item.get("XPOS", "")).strip()
-                    if xpos in ("", "?", "XPOS", "C", "CONJ", "PUNCT"):
+                    if xpos in ("", "?", "XPOS", "C", "CONJ", "PUNCT", "II", "Prt", "UH", "U", "IM", "IB"):
+                        continue
+                    # Kanonik tagga aylantirish (turli yozilish: p→P, J→JJ, N →N, V →V, Adj→JJ ...)
+                    norm_x = XPOS_NORM_MAP.get(xpos)
+                    if norm_x:
+                        item["XPOS"] = norm_x
+                    else:
                         continue
                     k = self._norm(form)
                     if k:
@@ -774,22 +799,40 @@ class DatabaseLookup:
     def subtype(self, entry: dict) -> str:
         xpos = entry.get("XPOS", "")
         if xpos == "P":
-            v = entry.get("Olmoshlarning ma\u2019noviy guruhlari", "")
+            v = entry.get("Olmoshlarning ma’noviy guruhlari", "")
             return v if v and v != "—" else "olmosh"
         if xpos == "JJ":
             v = entry.get("Belgining xususiyati", entry.get("Daraja", ""))
             return v if v and v != "—" else "sifat"
-        if xpos in ("Num", "NUM"):
-            v = entry.get("Ma\u2019noviy xususiyatlari", "")
+        if xpos == "NUM":
+            v = entry.get(" Ma'noviy xususiyatlari", entry.get("Ma’noviy xususiyatlari", ""))
             return v if v and v != "—" else "son"
-        if xpos in ("RR", "MD"):
+        if xpos == "RR":
             return "ravish"
         return ""
 
     def extra_cols(self, entry: dict) -> dict:
         skip = {"FORM", "LEMMA", "FEATS", "XPOS", "ID", "_suffix"}
-        return {k: v for k, v in entry.items()
-                if k not in skip and not k.startswith("_") and v not in ("—", "∅", "")}
+        ADV_COL_MAP = {
+            "Column13": "Ravishning ma'noviy guruhlari",
+            "Column14": "Tuzilishi",
+            "Column15": "Yasalishi",
+            "Column16": "Kelishik",
+            "Column17": "Son",
+            "Column18": "Egalik",
+        }
+        out = {}
+        for k, v in entry.items():
+            if k in skip or k.startswith("_"):
+                continue
+            if v in ("—", "∅", "", None):
+                continue
+            sv = str(v).strip()
+            if sv in ("—", "∅", ""):
+                continue
+            nk = ADV_COL_MAP.get(k, k)
+            out[nk] = sv
+        return out
 
 
 # ═══════════════════════════════════════════════════════
@@ -823,12 +866,19 @@ class UzbekPOSTagger:
                     pn     = self.e.norm(phrase)
                     # Qo'shma olmosh
                     if pn in self.e.ALL_PRON_B:
-                        sub = ("ko'rsatish olmoshi" if pn in self.e.KORSATISH_B else
-                               "belgilash olmoshi"  if pn in self.e.BELGILASH_B else
-                               "bo'lishsizlik olmoshi" if pn in self.e.BOLISHSIZLIK_B else
-                               "gumon olmoshi")
-                        pcats = self.e._pron_categories(pn, "")
-                        pcats["Tuzilishi"] = "qo'shma olmosh"
+                        if pn in self.e.KORSATISH_B:    sub, mn = "Ko'rsatish olmoshi", "Ko'rsatish olmoshi"
+                        elif pn in self.e.BELGILASH_B:  sub, mn = "Belgilash olmoshi",  "Belgilash olmoshi"
+                        elif pn in self.e.BOLISHSIZLIK_B: sub, mn = "Bo'lishsizlik olmoshi", "Bo'lishsizlik olmoshi"
+                        else:                            sub, mn = "Gumon olmoshi", "Gumon olmoshi"
+                        pcats = {
+                            "Olmoshlarning ma'noviy guruhlari": mn,
+                            "Tuzilishi":  "qo'shma",
+                            "Yasalishi":  "tub",
+                            "Kelishik":   "Bosh kelishik",
+                            "Son":        "Birlik",
+                            "Egalik":     "Egalik yo'q",
+                            "Olmoshlarning gapda bajaradigan vazifasiga ko'ra turlari": "Ot o'rnida qo'llangan",
+                        }
                         results.append({
                             "token": phrase, "stem": pn,
                             "pos": "P", "pos_uz": "Olmosh",
@@ -838,12 +888,27 @@ class UzbekPOSTagger:
                         i += ln; hit = True; break
                     # Qo'shma ravish
                     if pn in self.e.ALL_ADV_B:
-                        acats = self.e._adv_categories(pn, "")
-                        acats["Tuzilishi"] = "qo'shma ravish"
+                        # Birikmaga ko'ra ma'noviy guruhini topamiz
+                        if any(x in pn for x in ("doim","kuni","gal","zamon","yili","oy","safar","vaqt","soat","dam","marta","zumda","zum","lahza","pas","kuni","zahoti","onda")):
+                            mn = "Payt ravishi"
+                        elif any(x in pn for x in ("oz","pas","biroz","bilan")):
+                            mn = "Miqdor-daraja ravishi"
+                        elif any(x in pn for x in ("birga","qo'l-qo'lda")):
+                            mn = "Holat ravishi"
+                        else:
+                            mn = "Ravish"
+                        acats = {
+                            "Ravishning ma'noviy guruhlari": mn,
+                            "Tuzilishi": "qo'shma",
+                            "Yasalishi": "qo'shma yasalishi",
+                            "Kelishik":  "Bosh kelishik",
+                            "Son":       "Birlik",
+                            "Egalik":    "Egalik yo'q",
+                        }
                         results.append({
                             "token": phrase, "stem": pn,
-                            "pos": "ADV", "pos_uz": "Ravish",
-                            "subtype": acats.get("Ma'noviy guruhi", "ravish"),
+                            "pos": "RR", "pos_uz": "Ravish",
+                            "subtype": mn,
                             "confidence": 1.0,
                             "rule": "birikma_adv", "index": i, "cats": acats,
                         })
@@ -1149,7 +1214,7 @@ async def api_export(req: ExportRequest):
     ws = wb.active
     ws.title = "POS Natijalar"
 
-    headers = ["#", "Token", "O'zak", "POS", "O'zbekcha", "Tur / Daraja", "Ishonch", "Qoida"]
+    headers = ["#", "Token", "Lemma", "XPOS", "Turkum", "Tur / Daraja"]
     hfill = PatternFill("solid", fgColor="1D4ED8")
     hfont = Font(bold=True, color="FFFFFF")
     for col, h in enumerate(headers, 1):
@@ -1160,14 +1225,13 @@ async def api_export(req: ExportRequest):
     ws.row_dimensions[1].height = 20
 
     color_map = {
-        "P":  "D1FAE5", "ADV": "DBEAFE",
-        "ADJ":"FDE68A", "NUM": "FAE8FF",
+        "P":  "D1FAE5", "RR":  "DBEAFE",
+        "JJ": "FDE68A", "NUM": "FAE8FF",
         "N":  "F1F5F9", "V":   "FEF3C7",
     }
     for row_idx, t in enumerate(req.tokens, 2):
         fgcolor = color_map.get(t.get("pos", ""), "F9FAFB")
         fill    = PatternFill("solid", fgColor=fgcolor)
-        conf_pct = int((t.get("confidence", 0) or 0) * 100)
         vals = [
             row_idx - 1,
             t.get("token", ""),
@@ -1175,14 +1239,12 @@ async def api_export(req: ExportRequest):
             t.get("pos", ""),
             t.get("pos_uz", ""),
             t.get("subtype", ""),
-            str(conf_pct) + "%",
-            t.get("rule", ""),
         ]
         for col, v in enumerate(vals, 1):
             c = ws.cell(row=row_idx, column=col, value=v)
             c.fill = fill
 
-    for col, w in enumerate([5, 20, 20, 8, 12, 30, 10, 22], 1):
+    for col, w in enumerate([5, 20, 20, 8, 12, 30], 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = w
 
     buf = io.BytesIO()
