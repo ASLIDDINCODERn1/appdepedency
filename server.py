@@ -63,7 +63,8 @@ class UzbekRuleEngine:
     SOROQ       = frozenset({"kim","nima","qanday","qanaqa","qaysi","qancha",
                              "nechta","qayerda","qachon","nega","qayer","qayda"})
     BELGILASH   = frozenset({"har","hamma","barcha","bari","jami","ba'zi"})
-    BELGILASH_B = frozenset({"har kim","har nima","har qaysi","har qancha","har qanaqa"})
+    BELGILASH_B = frozenset({"har kim","har nima","har qaysi","har qancha","har qanaqa",
+                             "har bir","har biri","har kim-kim"})
     BOLISHSIZLIK   = frozenset({"hech"})
     BOLISHSIZLIK_B = frozenset({"hech kim","hech nima","hech qaysi",
                                 "hech qancha","hech qanaqa"})
@@ -989,7 +990,139 @@ class UzbekPOSTagger:
             })
             i += 1
 
-        return results
+        # ── POST-PASS: qo'shma so'zlarni birlashtirish ──
+        return self._merge_compounds(results)
+
+    def _merge_compounds(self, tokens: list) -> list:
+        """Qo'shni bir xil POS (NUM/RR/JJ/P) tokenlarini qo'shma so'z sifatida birlashtiradi."""
+        if not tokens:
+            return tokens
+
+        out = []
+        i = 0
+        N = len(tokens)
+        # NUM uchun aniq birikma hosil qiluvchi o'zaklar
+        NUM_STEM_SET = self.e.ALL_NUM
+        HISOB_SET    = self.e.HISOB
+        # Qo'shma ravishda ikkinchi bo'la oladigan so'zlar (N → RR birikma)
+        # Masalan: "bir oz", "bir zum", "har kuni", "o'tgan kuni" — birinchisi olmosh/sifat/son bo'lishi mumkin.
+
+        while i < N:
+            t = tokens[i]
+            pos = t.get("pos", "")
+
+            # 1) NUM birikma: ketma-ket NUM tokenlar
+            if pos == "NUM" and i + 1 < N and tokens[i+1].get("pos") == "NUM":
+                j = i + 1
+                while j < N and tokens[j].get("pos") == "NUM":
+                    j += 1
+                # faqat ochkov son + hisob so'z bo'lsa (masalan "beshta") alohida qoldiramiz
+                # aks holda hammasini birlashtiramiz
+                parts = tokens[i:j]
+                phrase  = " ".join(p["token"] for p in parts)
+                stem    = " ".join(p.get("stem", p["token"]) for p in parts)
+                is_digit = any(re.match(r"^\d", p["token"]) for p in parts)
+                ncats = self.e._num_categories(stem, "", is_digit, True)
+                # agar ketma-ket oxirida hisob so'z bo'lsa — "dona son" sifatida belgilansin
+                last = parts[-1].get("stem", "")
+                if last in HISOB_SET:
+                    ncats[" Ma'noviy xususiyatlari"] = "Dona son"
+                    ncats["Hisob so'zlar"] = last
+                out.append({
+                    "token": phrase, "stem": stem,
+                    "pos": "NUM", "pos_uz": "Son",
+                    "subtype": "qo'shma son",
+                    "confidence": 1.0,
+                    "rule": "birikma_num", "index": t.get("index", i),
+                    "cats": ncats,
+                })
+                i = j
+                continue
+
+            # 2) Tire bilan bog'langan JJ/RR: "qizil-sariq", "katta-kichik", "asta-sekin"
+            #    Tokenlar allaqachon tire bilan kelgan (tokenizer ularni bir token qilgan) — bu holatga qaramaymiz.
+
+            # 3) Juft (takroriy) JJ/RR: "katta katta", "sekin sekin"
+            if pos in ("JJ", "RR") and i + 1 < N \
+               and tokens[i+1].get("pos") == pos \
+               and self.e.norm(t.get("token","")) == self.e.norm(tokens[i+1].get("token","")):
+                phrase = t["token"] + " " + tokens[i+1]["token"]
+                stem   = t.get("stem", "")
+                cats = dict(t.get("cats", {}))
+                cats["Tuzilishi" if pos == "RR" else "Tuzulishi"] = "juft (takroriy)"
+                out.append({
+                    "token": phrase, "stem": stem,
+                    "pos": pos, "pos_uz": t.get("pos_uz", ""),
+                    "subtype": t.get("subtype", ""),
+                    "confidence": 1.0,
+                    "rule": "birikma_juft", "index": t.get("index", i),
+                    "cats": cats,
+                })
+                i += 2
+                continue
+
+            # 4) "har + N" → qo'shma ravish (har kuni, har gal, har safar ...)
+            #    lekin "har bir", "har kim" va hokazolar — belgilash olmoshi (allaqachon birikma_p bilan ushlangan).
+            if self.e.norm(t.get("token", "")) == "har" and i + 1 < N:
+                nxt = tokens[i+1]
+                HAR_ADV_NEXT = {"kuni","gal","zamon","yili","oy","safar","vaqt","soat","dam","payt","dafa","doim"}
+                nxt_norm = self.e.norm(nxt.get("token", ""))
+                if nxt_norm in HAR_ADV_NEXT:
+                    phrase = t["token"] + " " + nxt["token"]
+                    pn = self.e.norm(phrase)
+                    acats = {
+                        "Ravishning ma'noviy guruhlari": "Payt ravishi",
+                        "Tuzilishi": "qo'shma",
+                        "Yasalishi": "qo'shma yasalishi",
+                        "Kelishik":  "Bosh kelishik",
+                        "Son":       "Birlik",
+                        "Egalik":    "Egalik yo'q",
+                    }
+                    out.append({
+                        "token": phrase, "stem": pn,
+                        "pos": "RR", "pos_uz": "Ravish",
+                        "subtype": "Payt ravishi",
+                        "confidence": 0.92,
+                        "rule": "birikma_har", "index": t.get("index", i),
+                        "cats": acats,
+                    })
+                    i += 2
+                    continue
+
+            # 5) "bir + N/NUM" → ba'zi birikmalar (bir oz, bir pas, bir zum, bir marta, bir kuni)
+            if self.e.norm(t.get("token", "")) == "bir" and i + 1 < N:
+                nxt_raw = self.e.norm(tokens[i+1].get("token", ""))
+                BIR_ADV = {"oz","pas","zum","lahza","zumda","kuni","marta","pasda","lahzada"}
+                if nxt_raw in BIR_ADV:
+                    phrase = t["token"] + " " + tokens[i+1]["token"]
+                    pn = self.e.norm(phrase)
+                    mn = "Payt ravishi" if nxt_raw in {"kuni","marta","lahza","lahzada","zum","zumda","pas","pasda"} else "Miqdor-daraja ravishi"
+                    acats = {
+                        "Ravishning ma'noviy guruhlari": mn,
+                        "Tuzilishi": "qo'shma",
+                        "Yasalishi": "qo'shma yasalishi",
+                        "Kelishik":  "Bosh kelishik",
+                        "Son":       "Birlik",
+                        "Egalik":    "Egalik yo'q",
+                    }
+                    out.append({
+                        "token": phrase, "stem": pn,
+                        "pos": "RR", "pos_uz": "Ravish",
+                        "subtype": mn,
+                        "confidence": 0.92,
+                        "rule": "birikma_bir", "index": t.get("index", i),
+                        "cats": acats,
+                    })
+                    i += 2
+                    continue
+
+            out.append(t)
+            i += 1
+
+        # indekslarni qayta raqamlash
+        for k, t in enumerate(out):
+            t["index"] = k
+        return out
 
 
 # ── Global instances ──
@@ -1013,8 +1146,9 @@ def groq_fill_unknowns(tokens: list) -> list:
     words = [tokens[i]["token"] for i in idxs]
     prompt = (
         "O'zbek tilida quyidagi so'zlarni morfologik teglang.\n"
+        "POS belgilar (datasetdagi XPOS): P=olmosh, RR=ravish, JJ=sifat, NUM=son, N=ot, V=fe'l.\n"
         "Faqat JSON array qaytaring (boshqa hech narsa yozma):\n"
-        '[{"token":"...","pos":"N|V|ADJ|ADV|NUM|P","stem":"...","subtype":"...","confidence":0.0-1.0}]\n'
+        '[{"token":"...","pos":"N|V|JJ|RR|NUM|P","stem":"...","subtype":"...","confidence":0.0-1.0}]\n'
         "So'zlar: " + json.dumps(words, ensure_ascii=False)
     )
     try:
@@ -1032,9 +1166,11 @@ def groq_fill_unknowns(tokens: list) -> list:
         m = re.search(r"\[.*\]", raw, re.DOTALL)
         if m:
             parsed = json.loads(m.group())
+            POS_FIX = {"ADJ":"JJ","ADV":"RR","Adj":"JJ","Num":"NUM","VB":"V"}
             for idx, res in zip(idxs, parsed):
                 if isinstance(res, dict):
                     pos = str(res.get("pos", "N"))
+                    pos = POS_FIX.get(pos, pos)
                     tokens[idx].update({
                         "pos":        pos,
                         "pos_uz":     POS_UZ.get(pos, "Noma'lum"),
@@ -1062,7 +1198,7 @@ class TagRequest(BaseModel):
 
 class FilterRequest(BaseModel):
     tokens: List[dict]
-    pos_types: List[str] = ["P", "ADV", "ADJ", "NUM"]
+    pos_types: List[str] = ["P", "RR", "JJ", "NUM"]
 
 class AIRequest(BaseModel):
     text:     str
@@ -1169,21 +1305,52 @@ async def api_ai(req: AIRequest):
     if not groq_client:
         raise HTTPException(503, "Groq AI ulangan emas. Server muhitida GROQ_API_KEY o'rnating.")
 
-    pos_groups: Dict[str, List[str]] = {}
+    # Har bir token uchun batafsil tahlil tuzamiz
+    lines = []
+    compounds = []
     for t in req.tokens:
-        label = t.get("pos_uz", "?") + "(" + t.get("subtype", "") + ")"
-        pos_groups.setdefault(label, []).append(t.get("token", ""))
+        pos = t.get("pos", "?")
+        if pos == "PUNCT":
+            continue
+        tok   = t.get("token", "")
+        stem  = t.get("stem", "")
+        sub   = t.get("subtype", "")
+        # Qo'shma (birikma) so'zlarni aniqlaymiz
+        rule  = t.get("rule", "")
+        is_compound = rule.startswith("birikma") or " " in tok
+        info_parts = [f"{pos}", f"lemma={stem}"]
+        if sub:
+            info_parts.append(f"tur={sub}")
+        # Kategoriyalar (rule cats yoki DB fieldlari)
+        cats = t.get("cats") or t.get("db") or {}
+        for k, v in list(cats.items())[:6]:
+            if v and str(v) not in ("—","∅",""):
+                info_parts.append(f"{k}={v}")
+        tag_line = '"' + tok + '" (' + ", ".join(info_parts) + ")"
+        if is_compound:
+            compounds.append(tok)
+            tag_line = "[QO'SHMA] " + tag_line
+        lines.append("- " + tag_line)
 
-    summary   = "\n".join("- " + k + ": " + ", ".join(v) for k, v in pos_groups.items())
-    question  = req.question or "Bu gapni morfologik jihatdan tahlil qiling"
-    no_tokens = "(hali teglangan so'z yo'q)"
+    analysis = "\n".join(lines) if lines else "(hali teglangan so'z yo'q)"
+    comp_note = ""
+    if compounds:
+        comp_note = "\nMuhim: \"" + '", "'.join(compounds) + "\" — bu qo'shma (birikma) so'zlar, ulardagi har bir bo'lakni alohida emas, bitta so'z sifatida tahlil qiling.\n"
+
+    question = req.question or "Bu gapni morfologik jihatdan to'liq tahlil qiling. Har bir so'zning POS, turi, ma'noviy guruhi, tuzilishi, yasalishini ayting."
 
     prompt = (
-        "Gap: \"" + req.text + "\"\n\n"
-        "Teglangan natijalar:\n" + (summary or no_tokens) + "\n\n"
-        "Savol: " + question + "\n\n"
-        "O'zbek tilida qisqa va aniq javob bering. "
-        "Olmosh, ravish, sifat, son turlarini izohlang."
+        "GAP: \"" + req.text + "\"\n\n"
+        "DASTUR TAHLILI (rule + dataset):\n" + analysis + "\n"
+        + comp_note +
+        "\nBelgilar: P=olmosh, RR=ravish, JJ=sifat, NUM=son, N=ot, V=fe'l.\n\n"
+        "SAVOL: " + question + "\n\n"
+        "Qoidalar:\n"
+        "1) Yuqoridagi tahlilga tayaning — undan chekinmang. Agar tahlilda qo'shma so'z bo'lsa, AI ham uni qo'shma sifatida tushuntirsin.\n"
+        "2) Har bir muhim so'z/birikma uchun: XPOS, ma'noviy guruhi, tuzilishi (sodda/qo'shma/juft), yasalishi (tub/yasama)ni yozing.\n"
+        "3) Olmosh bo'lsa — gapda qaysi vazifada (ot/sifat/ravish/son o'rnida) kelganini ayting.\n"
+        "4) Fe'l bo'lsa — zamon, mayl, shaxs-sonni ko'rsating.\n"
+        "5) Javob o'zbek tilida, qisqa va ro'yxat shaklida bo'lsin."
     )
 
     try:
@@ -1191,13 +1358,15 @@ async def api_ai(req: AIRequest):
             model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content":
-                 "Siz o'zbek tili morfologiyasi va grammatikasi bo'yicha mutaxassissiz."},
+                 "Siz o'zbek tili morfologiyasi bo'yicha ekspertsiz. "
+                 "Berilgan dastur tahlilini tasdiqlab, izohlab bering; unga qarshi chiqmang. "
+                 "Qo'shma (birikma) so'zlarni bitta lingvistik birlik sifatida qaraysiz."},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
-            max_tokens=800,
+            temperature=0.2,
+            max_tokens=1200,
         )
-        return {"answer": resp.choices[0].message.content, "model": "llama3-8b-8192"}
+        return {"answer": resp.choices[0].message.content, "model": "llama-3.1-8b-instant"}
     except Exception as e:
         raise HTTPException(500, "Groq xatosi: " + str(e))
 
