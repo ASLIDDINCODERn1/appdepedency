@@ -50,9 +50,8 @@ XPOS_NORM_MAP = {
     "V":"V","VB":"V","v":"V","V ":"V"," V":"V",
     "PUNCT":"PUNCT",
 }
-
 # ═══════════════════════════════════════════════════════
-# RULE ENGINE  —  PDF lingvistik qoidalari
+# RULE ENGINE  —  PDF lingvistik qoidalari (TAHRIRLANGAN V3.5)
 # ═══════════════════════════════════════════════════════
 class UzbekRuleEngine:
 
@@ -74,8 +73,7 @@ class UzbekRuleEngine:
                              "allaqaysi","allaqancha","allanechta","birov","kimsa"})
     GUMON_B     = frozenset({"bir kishi","bir narsa","bir nima"})
 
-    ALL_PRON    = frozenset().union(KISHILIK, KORSATISH, SOROQ, BELGILASH,
-                                    BOLISHSIZLIK, OZLIK, GUMON)
+    ALL_PRON    = frozenset().union(KISHILIK, KORSATISH, SOROQ, BELGILASH, BOLISHSIZLIK, OZLIK, GUMON)
     ALL_PRON_B  = frozenset().union(KORSATISH_B, BELGILASH_B, BOLISHSIZLIK_B, GUMON_B)
 
     PRON_SUF = sorted([
@@ -105,7 +103,6 @@ class UzbekRuleEngine:
                           "jo'rttaga","azza-bazza","noiloj","noilojlikdan",
                           "ilojsizlikdan","majburlikdan","albatta","shubhasiz"})
     ALL_ADV  = frozenset().union(HOLAT_R, PAYT_R, ORIN_R, MIQDOR_R, MAQSAD_R)
-    # Qo'shma ravishlar (2 tokenli birikmalar)
     ALL_ADV_B = frozenset({
         "bir oz","bir pas","bir lahza","bir zum","bir zumda",
         "har doim","har kuni","har gal","har zamon","har yili","har oy",
@@ -155,47 +152,50 @@ class UzbekRuleEngine:
     NUM_TYPES = {
         "tartib":    sorted(["inchi","nchi","lamchi"], key=len, reverse=True),
         "dona":      ["ta"],
-        "chama":     sorted(["tacha","larcha","lab"], key=len, reverse=True),
+        "chama":     sorted(["tacha","larcha","lab","cha"], key=len, reverse=True),
         "jamlovchi": sorted(["ovlon","ov","ala"], key=len, reverse=True),
         "taqsim":    ["tadan"],
     }
 
-    # ── Fe'l qo'shimchalari (aniq fe'l alomatlari) ──
+    # ── QAT'IY OT BO'LGAN SO'ZLAR (Sifatga o'tib ketishini to'suvchi filtr) ──
+    HARD_NOUNS = frozenset({
+        # Joy nomlari
+        "andijon", "buxoro", "farg'ona", "jizzax", "xorazm", "urganch", "namangan", 
+        "navoiy", "qashqadaryo", "qarshi", "qoraqalpog'iston", "nukus", "samarqand", 
+        "sirdaryo", "guliston", "surxondaryo", "termiz", "toshkent", "nurafshon",
+        # Millatlar
+        "o'zbek", "rus", "ingliz", "qozoq", "qirg'iz", "tojik", "turkman", "qoraqalpoq", 
+        "turk", "arab", "xitoy", "koreys", "yapon", "hind", "pokistonlik", "afg'on", 
+        "eronlik", "fransuz", "nemis", "italyan", "ispan", "amerikalik", "kanadalik", 
+        "ukrain", "belarus", "polyak", "chex", "bolgar", "yunon", "gruzin", "arman", 
+        "ozarbayjon", "mo'g'ul", "vetnamlik", "misrlik", "braziliyalik", "avstraliyalik", 
+        "shved", "norveg", "fin", "ruminiyalik",
+        # Maxsus otlar
+        "telekanal", "tayyorgarlik", "xavfsizlik", "aholi", "koridor", "festival", "orol", 
+        "kitobxonlik", "do'stlik", "yoshlik", "go'zallik", "boylik", "kambag'allik", 
+        "ozodlik", "tenglik", "yaxshilik", "yomonlik", "insoniylik", "mehribonlik", 
+        "aqllilik", "mustaqillik", "qahramonlik", "dehqonchilik", "temirchilik", 
+        "o'qituvchilik", "rahbarlik", "shifokorlik", "fuqarolik", "hamkorlik"
+    })
+
+    # ── Fe'l qo'shimchalari ──
     VERB_STRONG_SUF = sorted([
-        # Infinitiv / niyat
-        "moqchiman","moqchisan","moqchimiz","moqchisiz","moqchi","moqda","moq",
-        # Hozirgi davom (-yap-)
+        "moqchiman","moqchisan","moqchimus","moqchisiz","moqchi","moqda","moq",
         "yapman","yapsan","yapmiz","yapsiz","yapti","yap",
-        # Hozirgi davom (-yotir, -yotib-)
-        "yotibman","yotibsan","yotibdi","yotibmiz","yotibsiz","yotir",
-        "yotgan","ayotgan",
-        # Sifatdosh (-gan + shaxs-son)
-        "ganman","gansan","ganmiz","gansiz","ganlar",
-        # Ravishdosh / sifatdosh
-        "ibman","ibsan","ibmiz","ibsiz","ibdi",
-        # Kelasi zamon
+        "yotibman","yotibsan","yotibdi","yotibmiz","yotibsiz","yotir", "yotgan","ayotgan",
+        "ganman","gansan","ganmiz","gansiz","ganlar","ibman","ibsan","ibmiz","ibsiz","ibdi",
         "ajakman","ajaksan","ajakmiz","ajaksiz","ajak",
     ], key=len, reverse=True)
 
     VERB_PROB_SUF = sorted([
-        # O'tgan zamon (aniq)
         "magansiz","magandim","magandik","magandi","magan",
         "madingiz","madilar","madim","mading","madik","madi",
         "dingiz","dilar","dik","dim","ding","di",
-        # Hozirgi-kelasi (aorist)
-        "adilar","amiz","asiz","aman","asan","adi",
-        "yamiz","yasiz","yaman","yasan","ydi",
-        "iyman","iysan","iymiz","iysiz","iyadi","iydi",
-        "yman","ysan","ymiz","ysiz",
-        # Shart mayli
-        "sangiz","salar","sam","sang","sak","sa",
-        # Buyruq
-        "sinlar","sin","gin",
-        # Ravishdosh
-        "ib","gach","guncha",
+        "adilar","amiz","asiz","aman","asan","adi","yamiz","yasiz","yaman","yasan","ydi",
+        "iyman","iysan","iymiz","iysiz","iyadi","iydi","yman","ysan","ymiz","ysiz",
+        "sangiz","salar","sam","sang","sak","sa","sinlar","sin","gin","ib","gach","guncha",
     ], key=len, reverse=True)
 
-    # Fe'l uchun umumiy o'zaklar (yasama bo'lmaydigan ildizlar uchun filtr)
     VERB_ROOT_HINT = frozenset({
         "bor","kel","ket","yur","tur","yot","o'tir","ol","ber","qil","et",
         "o'qi","yoz","ayt","de","bo'l","ish","ko'r","eshit","top","yo'qot",
@@ -207,47 +207,38 @@ class UzbekRuleEngine:
         "ur","yirtma","keltirib","keltir","olib","olmoq","aylan","yoriq",
     })
 
-    # Ular fe'l emas (bu ildizlar bilan tugasa ham qat'iy rad etiladi)
-    NON_VERB_ROOTS = frozenset()  # keyinchalik kengaytirish mumkin
+    NON_VERB_ROOTS = frozenset()
 
     def _is_verb(self, w: str):
-        """Fe'l alomatlarini aniqlaydi. (stem, suf, kind) qaytaradi yoki None."""
-        if not w:
+        if not w or w in self.HARD_NOUNS:
             return None
-        # Avvalambor — rule-based so'z turlarida bo'lsa, fe'l emas (odatda).
         if w in self.ALL_ADJ or w in self.ALL_ADV or w in self.ALL_PRON \
            or w in self.ALL_NUM or w in self.HISOB or w in self.ORTTIRMA \
            or w in self.OZAYTIRMA:
             return None
 
-        # 1) Strong suffiks — aniq fe'l
         for suf in self.VERB_STRONG_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 1:
                 stem = w[:-len(suf)]
                 if len(stem) >= 2:
                     return stem, suf, "strong"
 
-        # 2) Probable suffiks — ildiz tekshiruvi bilan
         for suf in self.VERB_PROB_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 1:
                 stem = w[:-len(suf)]
                 if 2 <= len(stem) <= 7:
-                    # Ildiz boshqa turkumga kirib qolmasin
                     if stem in self.ALL_ADJ or stem in self.ALL_ADV \
                        or stem in self.ALL_PRON or stem in self.ALL_NUM:
                         continue
                     return stem, suf, "prob"
         return None
 
-    # ── Normalizatsiya ──
-    # Apostrofni saqlaymiz chunki u o'zbek so'zlarining bir qismi (o'n, o'z, to'rt...)
     def norm(self, w: str) -> str:
         w = str(w).lower().strip()
-        w = re.sub(r"[.,!?;:()\[\]{}—«»\"`]", "", w)   # tinish belgilari olib tashlash
-        w = re.sub(r"[\u2018\u2019\u02bb\u02bc]", "'", w)  # smart quotes → straight apostrophe
+        w = re.sub(r"[.,!?;:()\[\]{}—«»\"`]", "", w)
+        w = re.sub(r"[\u2018\u2019\u02bb\u02bc]", "'", w)
         return w
 
-    # ── Yordamchi metodlar ──
     def _pron_stem(self, w):
         for suf in self.PRON_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 1:
@@ -265,7 +256,7 @@ class UzbekRuleEngine:
                         return stem, ntype
         return None, None
 
-    # ── Asosiy teglovchi ──
+    # ── Asosiy teglovchi funksiya ──
     def tag(self, word: str, prev: str = "", nxt: str = "") -> dict:
         raw = word
         w   = self.norm(word)
@@ -275,11 +266,35 @@ class UzbekRuleEngine:
         if not w:
             return self._r(raw, w, "PUNCT", "Tinish belgisi", "", 1.0, "punct")
 
-        # Raqam
-        if re.match(r"^\d+([.,/]\d+)*$", w):
-            return self._r(raw, w, "NUM", "Son", "butun son", 1.0, "digit")
+        # ── 1. RAQAM KO'RINISHIDAGI BILIKMALAR VA MATNLAR (RegEx) ──
+        # Masalan: 1, 2025, 2025-yil, 21-asr, 5-chi, 1-ta, 3-kurs
+        if re.match(r'^\d+([.,/]\d+)?(-(yil|asr|sinf|maktab|qavat|kurs|kun|chorak|bosqich|fasl|ta|chi|inchi))?$', w):
+            subtype = "raqamli ifoda"
+            if "-ta" in w: subtype = "Dona son"
+            elif "-chi" in w or "-inchi" in w: subtype = "Tartib son"
+            elif "-yil" in w: subtype = "Yil ko'rsatkichi"
+            elif "-asr" in w: subtype = "Asr ko'rsatkichi"
+            return self._r(raw, w, "NUM", "Son", subtype, 1.0, "digit_regex")
 
-        # ── OLMOSH ──
+        # Juft raqamli sonlar (Masalan: 5-6, 10-15, 20-30)
+        if re.match(r'^\d+-\d+$', w):
+            return self._r(raw, w, "NUM", "Son", "Juft son (raqamli)", 1.0, "digit_juft")
+
+        # ── 2. QAT'IY OT FILTRI (Xavfsizlik, Andijon, O'zbek, telekanal va b.) ──
+        # Agar so'z qat'iy otlar ro'yxatida bo'lsa yoki -lik bilan tugab ro'yxatda bo'lsa, uni qat'iy Ot (N) qilamiz.
+        if w in self.HARD_NOUNS or w.endswith("lik") or w.endswith("chilik") or w.endswith("korlik"):
+            # Istisno: agar so'z aniq sifatlar ichida bo'lmasa, uni ot qilamiz
+            if w not in self.ALL_ADJ:
+                subtype = "Turdoosh ot"
+                if w in {"andijon", "buxoro", "farg'ona", "jizzax", "xorazm", "urganch", "namangan", "navoiy", "qashqadaryo", "qarshi", "qoraqalpog'iston", "nukus", "samarqand", "sirdaryo", "guliston", "surxondaryo", "termiz", "toshkent", "nurafshon"}:
+                    subtype = "Atoqli ot (Joy nomi)"
+                elif w in {"o'zbek", "rus", "ingliz", "qozoq", "qirg'iz", "tojik", "turkman", "qoraqalpoq", "turk", "arab", "xitoy", "koreys", "yapon", "hind", "fransuz", "nemis", "italyan", "ispan"}:
+                    subtype = "Atoqli ot (Millat)"
+                elif w.endswith("lik") or w.endswith("chilik") or w.endswith("korlik"):
+                    subtype = "Mavhum ot (-lik)"
+                return self._r(raw, w, "N", "Ot", subtype, 1.0, "hard_noun_rule")
+
+        # ── 3. OLMOSH ──
         if w in self.KISHILIK:
             cats = self._pron_categories(w, "")
             return self._r(raw, w, "P", "Olmosh", "kishilik olmoshi", 1.0, "pron_kishilik", {"cats": cats})
@@ -307,19 +322,29 @@ class UzbekRuleEngine:
             cats = self._pron_categories(st, sf)
             return self._r(raw, st, "P", "Olmosh", self._pron_sub(st), 0.95, "pron+" + sf, {"cats": cats})
 
-        # ── SON ──
+        # ── 4. SON ──
         if w in self.ALL_NUM:
             cats = self._num_categories(w, "", False, False)
             return self._r(raw, w, "NUM", "Son", "Sanoq (miqdor) son", 1.0, "num_exact", {"cats": cats})
         if pv in self.ALL_NUM and w in self.HISOB:
             cats = self._num_categories(w, "dona", False, False)
             return self._r(raw, w, "NUM", "Son", "Hisob so'z", 0.92, "num_hisob", {"cats": cats})
+        
+        # Juft matnli sonlar uchun qoida (Masalan: bir-ikki, uch-to'rt, besh-olti, o'n-o'n besh)
+        if "-" in w and any(part in self.ALL_NUM for part in w.split("-")):
+            cats = self._num_categories(w, "", False, False)
+            return self._r(raw, w, "NUM", "Son", "Juft son", 1.0, "num_juft")
+
         stn, nt = self._num_stem(w)
         if stn:
             cats = self._num_categories(stn, nt, False, False)
             return self._r(raw, stn, "NUM", "Son", cats[" Ma'noviy xususiyatlari"], 0.95, "num+" + nt, {"cats": cats})
 
-        # ── FE'L ── (sifat/ravishdan oldin! aks holda "yugurdi" → ravish bo'p qoladi)
+        # Kasr sonlar matn ko'rinishida (Masalan: uchdan bir, to'rtdan bir, beshdan ikki)
+        if w.endswith("dan") and nx in self.ALL_NUM:
+            return self._r(raw, w, "NUM", "Son", "Kasr son", 0.95, "num_kasr")
+
+        # ── 5. FE'L ──
         vb = self._is_verb(w)
         if vb:
             stem, vsuf, kind = vb
@@ -329,7 +354,7 @@ class UzbekRuleEngine:
                            cats.get("Zamon", "") + " · " + cats.get("Mayl", ""),
                            conf, "verb+" + vsuf, {"cats": cats})
 
-        # ── SIFAT ──
+        # ── 6. SIFAT ──
         if pv in self.ORTTIRMA and w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
             return self._r(raw, w, "JJ", "Sifat", "orttirma daraja", 1.0, "adj_orttirma", {"cats": cats})
@@ -339,14 +364,16 @@ class UzbekRuleEngine:
         if w in self.ALL_ADJ:
             cats = self._adj_categories(w, pv)
             return self._r(raw, w, "JJ", "Sifat", self._adj_sub(w), 1.0, "adj_exact", {"cats": cats})
-        # Sifat sufiks — faqat ishonchli sufikslar (li/lik/dor/chan/siz/simon/mand/dagi)
+
+        # Sifat suffikslari
         SAFE_ADJ_SUF = ("li","lik","dor","chan","siz","simon","mand","dagi","roq")
         for suf in SAFE_ADJ_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 2:
                 root = w[:-len(suf)]
-                # ildiz boshqa turkumda bo'lsa, o'tkazib yuboramiz
-                if root in self.ALL_PRON or root in self.ALL_ADV \
-                   or root in self.ALL_NUM or root in self.HISOB:
+                # Agar ildiz yoki butun so'z qat'iy otlar ichida bo'lsa sifat qilmaymiz!
+                if root in self.HARD_NOUNS or w in self.HARD_NOUNS:
+                    continue
+                if root in self.ALL_PRON or root in self.ALL_ADV or root in self.ALL_NUM or root in self.HISOB:
                     continue
                 sub = {"roq":"qiyosiy daraja","li":"xususiyat sifati",
                        "lik":"xususiyat sifati","dagi":"o'rin-payt sifati",
@@ -355,17 +382,16 @@ class UzbekRuleEngine:
                 cats = self._adj_categories(root, pv, suf)
                 return self._r(raw, root, "JJ", "Sifat", sub, 0.80, "adj+" + suf, {"cats": cats})
 
-        # ── RAVISH ── (faqat aniq ravishlar; sufiksli detektsiyani olib tashlaymiz — false positive)
+        # ── 7. RAVISH ──
         if w in self.ALL_ADV:
             cats = self._adv_categories(w, "")
             return self._r(raw, w, "RR", "Ravish", self._adv_sub(w), 1.0, "adv_exact", {"cats": cats})
-        # Ravish sufikslari faqat juda qisqartirilgan ro'yxat (faqat aniq ravish yasovchilar)
+        
         SAFE_ADV_SUF = ("chasiga","larcha","cha","lab")
         for suf in SAFE_ADV_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 3:
                 root = w[:-len(suf)]
-                if root in self.ALL_ADJ or root in self.ALL_PRON \
-                   or root in self.ALL_NUM or root in self.HISOB:
+                if root in self.HARD_NOUNS or root in self.ALL_ADJ or root in self.ALL_PRON or root in self.ALL_NUM:
                     continue
                 cats = self._adv_categories(root, suf)
                 return self._r(raw, root, "RR", "Ravish",
@@ -381,11 +407,12 @@ class UzbekRuleEngine:
         return d
 
     def _adj_categories(self, w, pv="", suf=""):
-        """Sifatning 5 ta lingvistik kategoriyasi (dataset maydonlari)."""
-        if w in self.RANG_TUS or w in self.MAZA_TAM or w in self.HAJM \
-           or w in self.HID or w in self.XUSUSIYAT:    bel = "asliy sifat"
-        elif suf:                                       bel = "nisbiy sifat"
-        else:                                           bel = "asliy sifat"
+        if w in self.RANG_TUS or w in self.MAZA_TAM or w in self.HAJM or w in self.HID or w in self.XUSUSIYAT:
+            bel = "asliy sifat"
+        elif suf:
+            bel = "nisbiy sifat"
+        else:
+            bel = "asliy sifat"
 
         if pv in self.ORTTIRMA:         daraja = "orttirma daraja"
         elif pv in self.OZAYTIRMA:      daraja = "ozaytirma daraja"
@@ -418,7 +445,6 @@ class UzbekRuleEngine:
             "Sifatning LMGlari":    lgm,
         }
 
-    # ── Olmosh kategoriyalari (dataset maydonlari) ──
     def _pron_categories(self, stem, suf=""):
         if stem in self.KISHILIK:        man = "Kishilik olmoshi"
         elif stem in self.KORSATISH:     man = "Ko'rsatish olmoshi"
@@ -430,7 +456,7 @@ class UzbekRuleEngine:
         else:                            man = "Olmosh"
 
         SHAXS_SON = {"men":"Birlik","sen":"Birlik","u":"Birlik",
-                     "biz":"Ko'plik","siz":"Ko'plik","ular":"Ko'plik"}
+                    "biz":"Ko'plik","siz":"Ko'plik","ular":"Ko'plik"}
         son = SHAXS_SON.get(stem, "Birlik")
         if suf.startswith("lar"): son = "Ko'plik"
 
@@ -440,7 +466,8 @@ class UzbekRuleEngine:
         kelishik = "Bosh kelishik"
         for k in KEL:
             if suf.endswith(k):
-                kelishik = KEL[k]; break
+                kelishik = KEL[k]
+                break
 
         EGA_SUF = {"im":"I shaxs egalik","ing":"II shaxs egalik","i":"III shaxs egalik",
                    "imiz":"I shaxs egalik (ko'plik)","ingiz":"II shaxs egalik (ko'plik)",
@@ -448,19 +475,19 @@ class UzbekRuleEngine:
         egalik = "Egalik yo'q"
         for k, v in EGA_SUF.items():
             if suf == k or suf.startswith(k):
-                egalik = v; break
+                egalik = v
+                break
 
         tuzilish = "qo'shma" if " " in stem or "-" in stem else "sodda"
         yasalish = "affiksatsiya" if suf else "tub"
 
-        # Olmoshning gapda bajaradigan vazifasiga ko'ra turi (default — kontekstsiz)
         if stem in self.KISHILIK:           vazifa = "Ot o'rnida qo'llangan"
         elif stem in self.KORSATISH:        vazifa = "Sifat o'rnida qo'llangan"
         elif stem in self.SOROQ:
             if stem in {"qancha","nechta","necha"}: vazifa = "Son o'rnida qo'llangan"
             elif stem in {"qanday","qanaqa","qaysi"}: vazifa = "Sifat o'rnida qo'llangan"
             elif stem in {"qayerda","qachon","nega","qayer","qayda"}: vazifa = "Ravish o'rnida qo'llangan"
-            else:                                    vazifa = "Ot o'rnida qo'llangan"
+            else:                                     vazifa = "Ot o'rnida qo'llangan"
         elif stem in self.BELGILASH:        vazifa = "Sifat o'rnida qo'llangan"
         elif stem in self.BOLISHSIZLIK:     vazifa = "Ot o'rnida qo'llangan"
         elif stem in self.OZLIK:            vazifa = "Ot o'rnida qo'llangan"
@@ -477,7 +504,6 @@ class UzbekRuleEngine:
             "Olmoshlarning gapda bajaradigan vazifasiga ko'ra turlari": vazifa,
         }
 
-    # ── Ravish kategoriyalari (dataset maydonlari) ──
     def _adv_categories(self, w, suf=""):
         if w in self.HOLAT_R:    man = "Holat ravishi"
         elif w in self.PAYT_R:   man = "Payt ravishi"
@@ -490,7 +516,7 @@ class UzbekRuleEngine:
         if " " in w:                                  tuz = "qo'shma"
         elif len(parts) == 2 and parts[0] == parts[1]: tuz = "juft (takroriy)"
         elif "-" in w:                                 tuz = "qo'shma"
-        elif suf:                                      tuz = "yasama"
+        elif suf:                                     tuz = "yasama"
         else:                                          tuz = "sodda"
 
         YASAMA_SUF = {"cha","lab","dek","day","lay","siz","an","in","larcha","chasiga","layin"}
@@ -507,7 +533,6 @@ class UzbekRuleEngine:
             "Egalik":                        "Egalik yo'q",
         }
 
-    # ── Son kategoriyalari (dataset maydonlari) ──
     def _num_categories(self, stem, ntype="", is_digit=False, is_compound=False):
         MAN_MAP = {
             "tartib":    "Tartib son",
@@ -518,10 +543,10 @@ class UzbekRuleEngine:
         }
         man = MAN_MAP.get(ntype, "Sanoq (miqdor) son")
 
-        if is_compound:                            tuz = "qo'shma"
-        elif stem and "-" in str(stem):            tuz = "juft"
-        elif ntype:                                tuz = "yasama"
-        else:                                      tuz = "sodda"
+        if is_compound:                     tuz = "qo'shma"
+        elif stem and "-" in str(stem):     tuz = "juft"
+        elif ntype:                         tuz = "yasama"
+        else:                               tuz = "sodda"
 
         hisob = "raqam ko'rinishida" if is_digit else "—"
 
@@ -532,10 +557,8 @@ class UzbekRuleEngine:
             "Tuzalishiga ko'ra":       tuz,
         }
 
-    # ── Fe'l kategoriyalari ──
     def _verb_categories(self, stem, suf=""):
-        # Zamon
-        PAST   = {"di","dim","ding","dik","dik","dilar","dingiz",
+        PAST   = {"di","dim","ding","dik","dilar","dingiz",
                   "madi","madim","mading","madik","madilar","madingiz",
                   "magan","magandim","magandi","magandik","magansiz",
                   "ganman","gansan","ganmiz","gansiz","ganlar",
@@ -544,7 +567,7 @@ class UzbekRuleEngine:
                   "yotir","yotibdi","yotibman","yotibsan","yotibmiz","yotibsiz",
                   "yotgan","ayotgan","moqda"}
         FUT    = {"ajak","ajakman","ajaksan","ajakmiz","ajaksiz",
-                  "moqchi","moqchiman","moqchisan","moqchimiz","moqchisiz"}
+                  "moqchi","moqchiman","moqchisan","moqchimus","moqchisiz"}
         AORIST = {"adi","aman","asan","amiz","asiz","adilar",
                   "ydi","yaman","yasan","yamiz","yasiz"}
         if suf in PAST:        zamon = "o'tgan zamon"
@@ -554,7 +577,6 @@ class UzbekRuleEngine:
         elif suf == "moq":     zamon = "noaniq (infinitiv)"
         else:                  zamon = "—"
 
-        # Mayl
         ORDER = {"gin","sin","sinlar"}
         COND  = {"sa","sam","sang","sak","sangiz","salar"}
         if suf in ORDER:       mayl = "buyruq-istak mayli"
@@ -563,67 +585,61 @@ class UzbekRuleEngine:
         elif suf == "moq":     mayl = "harakat nomi"
         else:                  mayl = "xabar (aniqlik) mayli"
 
-        # Shaxs-son
-        S1B = {"man","yapman","yotibman","ganman","ibman","ajakman","aman","yaman","moqchiman","sam","dim","madim","gandim","magandim","madingiz"}
-        S2B = {"san","yapsan","yotibsan","gansan","ibsan","ajaksan","asan","yasan","moqchisan","sang","ding","mading","gansan","magansiz"}
+        S1B = {"man","yapman","yotibman","ganman","ibman","ajakman","aman","yaman","moqchiman","sam","dim","madim","gandim","magandim"}
+        S2B = {"san","yapsan","yotibsan","gansan","ibsan","ajaksan","asan","yasan","moqchisan","sang","ding","mading","magansiz"}
         S3B = {"di","madi","magan","adi","ydi","yapti","yotibdi","sa","sin","gan","ib","yotgan"}
-        S1K = {"miz","yapmiz","yotibmiz","ganmiz","ibmiz","ajakmiz","amiz","yamiz","moqchimiz","sak","dik","madik","gandik","magandik"}
-        S2K = {"ngiz","yapsiz","yotibsiz","gansiz","ibsiz","ajaksiz","asiz","yasiz","moqchisiz","sangiz","dingiz","madingiz","magansiz"}
+        S1K = {"miz","yapmiz","yotibmiz","ganmiz","ibmiz","ajakmiz","amiz","yamiz","moqchimiz","sak","dik","madik","gandik"}
+        S2K = {"ngiz","yapsiz","yotibsiz","gansiz","ibsiz","ajaksiz","asiz","yasiz","moqchisiz","sangiz","dingiz","madingiz"}
         S3K = {"lar","dilar","madilar","adilar","ganlar","sinlar","salar"}
-        if suf in S1B:   shaxs = "I shaxs birlik"
-        elif suf in S2B: shaxs = "II shaxs birlik"
-        elif suf in S1K: shaxs = "I shaxs ko'plik"
-        elif suf in S2K: shaxs = "II shaxs ko'plik"
-        elif suf in S3K: shaxs = "III shaxs ko'plik"
-        elif suf in S3B: shaxs = "III shaxs birlik"
-        else:            shaxs = "—"
+        
+        if suf in S1B:     shaxs = "I shaxs birlik"
+        elif suf in S2B:   shaxs = "II shaxs birlik"
+        elif suf in S1K:   shaxs = "I shaxs ko'plik"
+        elif suf in S2K:   shaxs = "II shaxs ko'plik"
+        elif suf in S3K:   shaxs = "III shaxs ko'plik"
+        elif suf in S3B:   shaxs = "III shaxs birlik"
+        else:              shaxs = "—"
 
-        # Bo'lishli/bo'lishsiz
         bolishli = "bo'lishsiz (-ma-)" if suf.startswith("ma") or suf.startswith("magan") or suf.startswith("madi") else "bo'lishli"
-
-        # Yasalishi / tuzilishi
         YASAMA_FE_SUF = {"la","lash","lan","lat","tir","dir","gaz","giz"}
         yas = "asl (sodda) fe'l"
         for ys in YASAMA_FE_SUF:
             if stem.endswith(ys) and len(stem) > len(ys) + 1:
                 yas = "yasama fe'l (-" + ys + ")"
                 break
-
         return {
-            "Zamon":      zamon,
-            "Mayl":       mayl,
-            "Shaxs-son":  shaxs,
-            "Bo'lishli":  bolishli,
-            "Yasalishi":  yas,
+            "Zamon": zamon,
+            "Mayl": mayl,
+            "Shaxs-son": shaxs,
+            "Bo'lishli": bolishli,
+            "Yasalishi": yas,
         }
 
     def _pron_sub(self, st):
-        if st in self.KISHILIK:      return "kishilik olmoshi"
-        if st in self.KORSATISH:     return "ko'rsatish olmoshi"
-        if st in self.SOROQ:         return "so'roq olmoshi"
-        if st in self.BELGILASH:     return "belgilash olmoshi"
-        if st in self.BOLISHSIZLIK:  return "bo'lishsizlik olmoshi"
-        if st in self.OZLIK:         return "o'zlik olmoshi"
-        if st in self.GUMON:         return "gumon olmoshi"
+        if st in self.KISHILIK: return "kishilik olmoshi"
+        if st in self.KORSATISH: return "ko'rsatish olmoshi"
+        if st in self.SOROQ: return "so'roq olmoshi"
+        if st in self.BELGILASH: return "belgilash olmoshi"
+        if st in self.BOLISHSIZLIK: return "bo'lishsizlik olmoshi"
+        if st in self.OZLIK: return "o'zlik olmoshi"
+        if st in self.GUMON: return "gumon olmoshi"
         return "olmosh"
 
     def _adv_sub(self, w):
-        if w in self.HOLAT_R:  return "holat ravishi"
-        if w in self.PAYT_R:   return "payt ravishi"
-        if w in self.ORIN_R:   return "o'rin ravishi"
+        if w in self.HOLAT_R: return "holat ravishi"
+        if w in self.PAYT_R: return "payt ravishi"
+        if w in self.ORIN_R: return "o'rin ravishi"
         if w in self.MIQDOR_R: return "miqdor-daraja ravishi"
         if w in self.MAQSAD_R: return "maqsad-sabab ravishi"
         return "ravish"
 
     def _adj_sub(self, w):
-        if w in self.RANG_TUS:  return "rang-tus sifati"
-        if w in self.MAZA_TAM:  return "maza-ta'm sifati"
-        if w in self.HAJM:      return "hajm sifati"
-        if w in self.HID:       return "hid bildiruvchi sifat"
+        if w in self.RANG_TUS: return "rang-tus sifati"
+        if w in self.MAZA_TAM: return "maza-ta'm sifati"
+        if w in self.HAJM: return "hajm sifati"
+        if w in self.HID: return "hid bildiruvchi sifat"
         if w in self.XUSUSIYAT: return "xususiyat sifati"
         return "sifat"
-
-
 # ═══════════════════════════════════════════════════════
 # STATISTICAL MODEL  —  Stanza kabi dataset'dan o'rganish
 # ═══════════════════════════════════════════════════════
