@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title O'zbek POS Tagger — Server
+title Morphological POS tagging - Server
 
 echo.
 echo  ╔══════════════════════════════════════════╗
-echo  ║   O'ZBEK POS TAGGER  —  Backend Server   ║
+echo  ║   MORPHOLOGICAL POS TAGGING - Backend Server   ║
 echo  ╚══════════════════════════════════════════╝
 echo.
 

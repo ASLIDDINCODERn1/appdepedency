@@ -1,5 +1,5 @@
 """
-server.py — O'zbek Rule-Based POS Tagger v3.0
+server.py — Morphological POS tagging v3.0
 Pipeline: Rule Engine → Dataset DB → Stat Model (Stanza-like) → Unknown
 
 Ishga tushirish:
@@ -171,12 +171,17 @@ class UzbekRuleEngine:
         "ozarbayjon", "mo'g'ul", "vetnamlik", "misrlik", "braziliyalik", "avstraliyalik", 
         "shved", "norveg", "fin", "ruminiyalik",
         # Maxsus otlar
-        "telekanal", "tayyorgarlik", "xavfsizlik", "aholi", "koridor", "festival", "orol", 
+        "telekanal", "tayyorgarlik", "xavfsizlik", "aholi", "koridor", "festival", "orol",
+        "ko'l", "cho'l", "kanal", "manzil", "sohil", "til",
         "kitobxonlik", "do'stlik", "yoshlik", "go'zallik", "boylik", "kambag'allik", 
         "ozodlik", "tenglik", "yaxshilik", "yomonlik", "insoniylik", "mehribonlik", 
         "aqllilik", "mustaqillik", "qahramonlik", "dehqonchilik", "temirchilik", 
         "o'qituvchilik", "rahbarlik", "shifokorlik", "fuqarolik", "hamkorlik"
     })
+    POSSESSIVE_NOUN_ROOTS = frozenset({
+        "ko'l", "cho'l", "kanal", "manzil", "festival", "sohil", "til",
+    })
+    NOUN_POSSESSIVE_SUF = sorted(["lari", "imiz", "ingiz", "si", "i"], key=len, reverse=True)
 
     # ── Fe'l qo'shimchalari ──
     VERB_STRONG_SUF = sorted([
@@ -256,6 +261,14 @@ class UzbekRuleEngine:
                         return stem, ntype
         return None, None
 
+    def _noun_possessive_stem(self, w):
+        for suf in self.NOUN_POSSESSIVE_SUF:
+            if w.endswith(suf) and len(w) > len(suf) + 1:
+                stem = w[:-len(suf)]
+                if stem in self.POSSESSIVE_NOUN_ROOTS or stem in self.HARD_NOUNS:
+                    return stem, suf
+        return None, None
+
     # ── Asosiy teglovchi funksiya ──
     def tag(self, word: str, prev: str = "", nxt: str = "") -> dict:
         raw = word
@@ -274,11 +287,19 @@ class UzbekRuleEngine:
             elif "-chi" in w or "-inchi" in w: subtype = "Tartib son"
             elif "-yil" in w: subtype = "Yil ko'rsatkichi"
             elif "-asr" in w: subtype = "Asr ko'rsatkichi"
-            return self._r(raw, w, "NUM", "Son", subtype, 1.0, "digit_regex")
+            cats = self._num_categories(w, "", True, False)
+            cats[" Ma'noviy xususiyatlari"] = subtype
+            return self._r(raw, w, "NUM", "Son", subtype, 1.0, "digit_regex", {"cats": cats})
 
         # Juft raqamli sonlar (Masalan: 5-6, 10-15, 20-30)
         if re.match(r'^\d+-\d+$', w):
-            return self._r(raw, w, "NUM", "Son", "Juft son (raqamli)", 1.0, "digit_juft")
+            cats = self._num_categories(w, "", True, False)
+            cats[" Ma'noviy xususiyatlari"] = "Juft son (raqamli)"
+            return self._r(raw, w, "NUM", "Son", "Juft son (raqamli)", 1.0, "digit_juft", {"cats": cats})
+
+        noun_stem, noun_suf = self._noun_possessive_stem(w)
+        if noun_stem:
+            return self._r(raw, noun_stem, "N", "Ot", "Egalik qo'shimchali ot", 0.98, "noun_possessive+" + noun_suf)
 
         # ── 2. QAT'IY OT FILTRI (Xavfsizlik, Andijon, O'zbek, telekanal va b.) ──
         # Agar so'z qat'iy otlar ro'yxatida bo'lsa yoki -lik bilan tugab ro'yxatda bo'lsa, uni qat'iy Ot (N) qilamiz.
@@ -554,7 +575,7 @@ class UzbekRuleEngine:
             " Ma'noviy xususiyatlari": man,
             "Hisob so'zlar":           hisob,
             "Bir so'zining ma'nolari": "—",
-            "Tuzalishiga ko'ra":       tuz,
+            "Tuzilishiga ko'ra":       tuz,
         }
 
     def _verb_categories(self, stem, suf=""):
@@ -863,7 +884,7 @@ class UzbekPOSTagger:
 
     def tokenize(self, text: str) -> List[str]:
         tokens = re.findall(
-            r"\d+[.,/]?\d*|[\w'\u02bb\u02bc\u2018\u2019\-]+|[.,!?;:\u2014\u00ab\u00bb]",
+            r"\d+(?:[.,/]\d+)?(?:-\d+(?:[.,/]\d+)?)?(?:-(?:yil|asr|sinf|maktab|qavat|kurs|kun|chorak|bosqich|fasl|ta|chi|inchi))?|[\w'\u02bb\u02bc\u2018\u2019\-]+|[.,!?;:\u2014\u00ab\u00bb]",
             text, re.UNICODE
         )
         return [t.strip() for t in tokens if t.strip()]
@@ -1204,7 +1225,7 @@ def groq_fill_unknowns(tokens: list) -> list:
 # ═══════════════════════════════════════════════════════
 # FASTAPI
 # ═══════════════════════════════════════════════════════
-app = FastAPI(title="O'zbek POS Tagger v3.0", version="3.0.0")
+app = FastAPI(title="Morphological POS tagging", version="3.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -1448,7 +1469,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     groq_status = "ulandi" if groq_client else "yo'q (GROQ_API_KEY o'rnating)"
     log.info("=" * 58)
-    log.info("O'zbek Rule-Based POS Tagger  v3.0")
+    log.info("Morphological POS tagging v3.0")
     log.info("DB: " + str(len(db.db)) + " so'z | Stat: " + str(len(db.stat.suf_cnt)) + " naqsh | Groq: " + groq_status)
     log.info("Server: http://0.0.0.0:" + str(port))
     log.info("=" * 58)

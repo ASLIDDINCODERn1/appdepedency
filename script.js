@@ -1,5 +1,5 @@
 /* ================================================================
-   script.js — O'zbek POS Tagger v3.0
+   script.js — Morphological POS tagging v3.0
    Rule + Dataset DB + Statistical Model + Groq AI
    ================================================================ */
 
