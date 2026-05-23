@@ -156,6 +156,16 @@ class UzbekRuleEngine:
         "jamlovchi": sorted(["ovlon","ov","ala"], key=len, reverse=True),
         "taqsim":    ["tadan"],
     }
+    NUM_UNITS = frozenset({"bir","ikki","uch","to'rt","besh","olti","yetti","sakkiz","to'qqiz"})
+    NUM_TENS = frozenset({"o'n","yigirma","o'ttiz","qirq","ellik","oltmish","yetmish","sakson","to'qson"})
+    NUM_SCALES = frozenset({"yuz","ming","million","milliard"})
+    NUM_TYPE_CODES = {
+        "tartib": "[[MD]]",
+        "dona": "[[NUMCount]]",
+        "chama": "[[NUMQ]]",
+        "jamlovchi": "[[NUMCol]]",
+        "taqsim": "[[NUMDiv]]",
+    }
 
     # ── QAT'IY OT BO'LGAN SO'ZLAR (Sifatga o'tib ketishini to'suvchi filtr) ──
     HARD_NOUNS = frozenset({
@@ -261,6 +271,26 @@ class UzbekRuleEngine:
                         return stem, ntype
         return None, None
 
+    def _is_simple_digit_num(self, stem):
+        s = str(stem)
+        if not re.fullmatch(r"\d+", s):
+            return False
+        n = int(s)
+        return n < 10 or (n < 100 and n % 10 == 0) or n in {100, 1000, 1000000, 1000000000}
+
+    def _is_text_num_compound(self, stems):
+        if len(stems) < 2 or any(st not in self.ALL_NUM for st in stems):
+            return False
+        for prev, cur in zip(stems, stems[1:]):
+            if prev in self.NUM_TENS and (cur in self.NUM_UNITS or cur in self.NUM_SCALES):
+                continue
+            if prev in self.NUM_UNITS and cur in self.NUM_SCALES:
+                continue
+            if prev in self.NUM_SCALES and cur in self.ALL_NUM:
+                continue
+            return False
+        return True
+
     def _noun_possessive_stem(self, w):
         for suf in self.NOUN_POSSESSIVE_SUF:
             if w.endswith(suf) and len(w) > len(suf) + 1:
@@ -282,20 +312,20 @@ class UzbekRuleEngine:
         # ── 1. RAQAM KO'RINISHIDAGI BILIKMALAR VA MATNLAR (RegEx) ──
         # Masalan: 1, 2025, 2025-yil, 21-asr, 5-chi, 1-ta, 3-kurs
         if re.match(r'^\d+([.,/]\d+)?(-(yil|asr|sinf|maktab|qavat|kurs|kun|chorak|bosqich|fasl|ta|chi|inchi))?$', w):
-            subtype = "raqamli ifoda"
-            if "-ta" in w: subtype = "Dona son"
-            elif "-chi" in w or "-inchi" in w: subtype = "Tartib son"
+            subtype = "[[NUM]]"
+            if "-ta" in w: subtype = "[[NUMCount]]"
+            elif "-chi" in w or "-inchi" in w: subtype = "[[MD]]"
             elif "-yil" in w: subtype = "Yil ko'rsatkichi"
             elif "-asr" in w: subtype = "Asr ko'rsatkichi"
             cats = self._num_categories(w, "", True, False)
-            cats[" Ma'noviy xususiyatlari"] = subtype
+            if subtype.startswith("[["):
+                cats[" Ma'noviy xususiyatlari"] = subtype
             return self._r(raw, w, "NUM", "Son", subtype, 1.0, "digit_regex", {"cats": cats})
 
         # Juft raqamli sonlar (Masalan: 5-6, 10-15, 20-30)
         if re.match(r'^\d+-\d+$', w):
             cats = self._num_categories(w, "", True, False)
-            cats[" Ma'noviy xususiyatlari"] = "Juft son (raqamli)"
-            return self._r(raw, w, "NUM", "Son", "Juft son (raqamli)", 1.0, "digit_juft", {"cats": cats})
+            return self._r(raw, w, "NUM", "Son", cats[" Ma'noviy xususiyatlari"], 1.0, "digit_juft", {"cats": cats})
 
         noun_stem, noun_suf = self._noun_possessive_stem(w)
         if noun_stem:
@@ -346,15 +376,15 @@ class UzbekRuleEngine:
         # ── 4. SON ──
         if w in self.ALL_NUM:
             cats = self._num_categories(w, "", False, False)
-            return self._r(raw, w, "NUM", "Son", "Sanoq (miqdor) son", 1.0, "num_exact", {"cats": cats})
+            return self._r(raw, w, "NUM", "Son", cats[" Ma'noviy xususiyatlari"], 1.0, "num_exact", {"cats": cats})
         if pv in self.ALL_NUM and w in self.HISOB:
             cats = self._num_categories(w, "dona", False, False)
-            return self._r(raw, w, "NUM", "Son", "Hisob so'z", 0.92, "num_hisob", {"cats": cats})
+            return self._r(raw, w, "NUM", "Son", cats[" Ma'noviy xususiyatlari"], 0.92, "num_hisob", {"cats": cats})
         
         # Juft matnli sonlar uchun qoida (Masalan: bir-ikki, uch-to'rt, besh-olti, o'n-o'n besh)
         if "-" in w and any(part in self.ALL_NUM for part in w.split("-")):
             cats = self._num_categories(w, "", False, False)
-            return self._r(raw, w, "NUM", "Son", "Juft son", 1.0, "num_juft")
+            return self._r(raw, w, "NUM", "Son", cats[" Ma'noviy xususiyatlari"], 1.0, "num_juft", {"cats": cats})
 
         stn, nt = self._num_stem(w)
         if stn:
@@ -555,26 +585,23 @@ class UzbekRuleEngine:
         }
 
     def _num_categories(self, stem, ntype="", is_digit=False, is_compound=False):
-        MAN_MAP = {
-            "tartib":    "Tartib son",
-            "dona":      "Dona son",
-            "chama":     "Chama son",
-            "jamlovchi": "Jamlovchi son",
-            "taqsim":    "Taqsim son",
-        }
-        man = MAN_MAP.get(ntype, "Sanoq (miqdor) son")
+        man = self.NUM_TYPE_CODES.get(ntype, "[[NUM]]")
 
-        if is_compound:                     tuz = "qo'shma"
-        elif stem and "-" in str(stem):     tuz = "juft"
-        elif ntype:                         tuz = "yasama"
-        else:                               tuz = "sodda"
+        stem_text = str(stem)
+        if is_compound or " " in stem_text:
+            tuz = "[[NUMCmp]]"
+        elif is_digit and not self._is_simple_digit_num(stem_text):
+            tuz = "[[NUMCmp]]"
+        else:
+            tuz = "[[NUMD]]"
 
         hisob = "raqam ko'rinishida" if is_digit else "—"
+        bir_mano = "[[NUMC]]" if self.norm(stem_text) == "bir" else "—"
 
         return {
             " Ma'noviy xususiyatlari": man,
             "Hisob so'zlar":           hisob,
-            "Bir so'zining ma'nolari": "—",
+            "Bir so'zining ma'nolari": bir_mano,
             "Tuzilishiga ko'ra":       tuz,
         }
 
@@ -858,6 +885,7 @@ class DatabaseLookup:
             "Column16": "Kelishik",
             "Column17": "Son",
             "Column18": "Egalik",
+            "Tuzalishiga ko'ra": "Tuzilishiga ko'ra",
         }
         out = {}
         for k, v in entry.items():
@@ -966,14 +994,15 @@ class UzbekPOSTagger:
                             parts.append(tokens[j]); j += 1
                         else:
                             break
-                    if len(parts) >= 2:
+                    stems = [self.e.norm(p) for p in parts]
+                    if self.e._is_text_num_compound(stems):
                         phrase = " ".join(parts)
                         pn     = self.e.norm(phrase)
                         ncats  = self.e._num_categories(pn, "", False, True)
                         results.append({
                             "token": phrase, "stem": pn,
                             "pos": "NUM", "pos_uz": "Son",
-                            "subtype": "qo'shma son",
+                            "subtype": ncats[" Ma'noviy xususiyatlari"],
                             "confidence": 1.0,
                             "rule": "birikma_num", "index": i, "cats": ncats,
                         })
@@ -1048,27 +1077,29 @@ class UzbekPOSTagger:
             t = tokens[i]
             pos = t.get("pos", "")
 
-            # 1) NUM birikma: ketma-ket NUM tokenlar
+            # 1) NUM birikma: faqat haqiqiy matnli qo'shma sonlar
             if pos == "NUM" and i + 1 < N and tokens[i+1].get("pos") == "NUM":
                 j = i + 1
                 while j < N and tokens[j].get("pos") == "NUM":
                     j += 1
-                # faqat ochkov son + hisob so'z bo'lsa (masalan "beshta") alohida qoldiramiz
-                # aks holda hammasini birlashtiramiz
                 parts = tokens[i:j]
+                stems = [p.get("stem", p["token"]) for p in parts]
+                if not self.e._is_text_num_compound(stems):
+                    out.append(t)
+                    i += 1
+                    continue
                 phrase  = " ".join(p["token"] for p in parts)
-                stem    = " ".join(p.get("stem", p["token"]) for p in parts)
-                is_digit = any(re.match(r"^\d", p["token"]) for p in parts)
-                ncats = self.e._num_categories(stem, "", is_digit, True)
+                stem    = " ".join(stems)
+                ncats = self.e._num_categories(stem, "", False, True)
                 # agar ketma-ket oxirida hisob so'z bo'lsa — "dona son" sifatida belgilansin
                 last = parts[-1].get("stem", "")
                 if last in HISOB_SET:
-                    ncats[" Ma'noviy xususiyatlari"] = "Dona son"
+                    ncats[" Ma'noviy xususiyatlari"] = self.e.NUM_TYPE_CODES["dona"]
                     ncats["Hisob so'zlar"] = last
                 out.append({
                     "token": phrase, "stem": stem,
                     "pos": "NUM", "pos_uz": "Son",
-                    "subtype": "qo'shma son",
+                    "subtype": ncats[" Ma'noviy xususiyatlari"],
                     "confidence": 1.0,
                     "rule": "birikma_num", "index": t.get("index", i),
                     "cats": ncats,
