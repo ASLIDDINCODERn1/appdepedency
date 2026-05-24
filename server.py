@@ -132,7 +132,9 @@ class UzbekRuleEngine:
                            "yangi","eski","toza","iflos","go'zal",
                            "aziz","sevimli","dono","g'ayratli","ishchan",
                            "shirinso'z","muloyim","qo'rqmas","botir",
-                           "kuchsiz","dangasa","qiyin","oson","erkin"})
+                           "kuchsiz","dangasa","qiyin","oson","erkin",
+                           "umumiy","joriy","teng","mas'ul","bo'sh",
+                           "online","boshqa","jismoniy","maxsus","muhim"})
     ALL_ADJ   = frozenset().union(RANG_TUS, MAZA_TAM, HAJM, HID, XUSUSIYAT)
     ORTTIRMA  = frozenset({"eng","g'oyat","juda","nihoyatda","bag'oyat",
                            "behad","tim","jiqqa","lang","o'ta"})
@@ -192,6 +194,11 @@ class UzbekRuleEngine:
         "ko'l", "cho'l", "kanal", "manzil", "festival", "sohil", "til",
     })
     NOUN_POSSESSIVE_SUF = sorted(["lari", "imiz", "ingiz", "si", "i"], key=len, reverse=True)
+    NON_ADJ_OVERRIDES = {
+        "orqali": ("RR", "Ravish", "vosita bildiruvchi so'z", "non_adj_orqali"),
+        "tasdiq": ("N", "Ot", "Turdoosh ot", "non_adj_noun"),
+        "qarshisida": ("N", "Ot", "O'rin-payt shaklidagi ot", "non_adj_noun"),
+    }
 
     # ── Fe'l qo'shimchalari ──
     VERB_STRONG_SUF = sorted([
@@ -308,6 +315,11 @@ class UzbekRuleEngine:
 
         if not w:
             return self._r(raw, w, "PUNCT", "Tinish belgisi", "", 1.0, "punct")
+
+        if w in self.NON_ADJ_OVERRIDES:
+            pos, pos_uz, subtype, rule = self.NON_ADJ_OVERRIDES[w]
+            cats = self._adv_categories(w, "") if pos == "RR" else {}
+            return self._r(raw, w, pos, pos_uz, subtype, 1.0, rule, {"cats": cats} if cats else None)
 
         # ── 1. RAQAM KO'RINISHIDAGI BILIKMALAR VA MATNLAR (RegEx) ──
         # Masalan: 1, 2025, 2025-yil, 21-asr, 5-chi, 1-ta, 3-kurs
@@ -491,7 +503,7 @@ class UzbekRuleEngine:
         return {
             "Belgining xususiyati": bel,
             "Daraja":               daraja,
-            "Tuzulishi":            tuz,
+            "Tuzilishi":            tuz,
             "Yasalishi":            yas,
             "Sifatning LMGlari":    lgm,
         }
@@ -1028,6 +1040,12 @@ class UzbekPOSTagger:
                 pos, pos_uz = self.db.XPOS_MAP.get(xpos, ("N", "Ot"))
                 suf        = entry.get("_suffix", "")
                 lemma      = self.e.norm(entry.get("LEMMA", tok))
+                db_extra = self.db.extra_cols(entry)
+                cats = {}
+                if pos == "JJ" and not db_extra:
+                    cats = self.e._adj_categories(lemma or self.e.norm(tok))
+                elif pos == "RR" and not db_extra:
+                    cats = self.e._adv_categories(lemma or self.e.norm(tok), "")
                 results.append({
                     "token":    tok,
                     "stem":     lemma or self.e.norm(tok),
@@ -1037,7 +1055,8 @@ class UzbekPOSTagger:
                     "confidence": 0.90 if not suf else 0.83,
                     "rule":     "database" + ("+" + suf if suf else ""),
                     "index":    i,
-                    "db":       self.db.extra_cols(entry),
+                    "db":       db_extra,
+                    **({"cats": cats} if cats else {}),
                 })
                 i += 1
                 continue
@@ -1117,7 +1136,7 @@ class UzbekPOSTagger:
                 phrase = t["token"] + " " + tokens[i+1]["token"]
                 stem   = t.get("stem", "")
                 cats = dict(t.get("cats", {}))
-                cats["Tuzilishi" if pos == "RR" else "Tuzulishi"] = "juft (takroriy)"
+                cats["Tuzilishi"] = "juft (takroriy)"
                 out.append({
                     "token": phrase, "stem": stem,
                     "pos": pos, "pos_uz": t.get("pos_uz", ""),
